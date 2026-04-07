@@ -1,0 +1,35 @@
+{
+  "name": "@nexqa/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^1.1.6",
+    "@ai-sdk/openai": "^1.1.9",
+    "@aws-sdk/client-s3": "^3.1019.0",
+    "@aws-sdk/s3-request-presigner": "^3.1019.0",
+    "@hono/node-server": "^1.13.7",
+    "@nexqa/shared": "workspace:*",
+    "ai": "^4.1.14",
+    "ajv": "^8.18.0",
+    "ajv-formats": "^3.0.1",
+    "cheerio": "^1.0.0",
+    "hono": "^4.6.16",
+    "undici": "^7.2.3",
+    "uuid": "^11.0.5",
+    "ws": "^8.20.0",
+    "yaml": "^2.8.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/uuid": "^10.0.0",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

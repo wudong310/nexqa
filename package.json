@@ -1,0 +1,34 @@
+{
+  "name": "nexqa",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "build": "pnpm -r build",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "test": "vitest run",
+    "e2e": "playwright test",
+    "e2e:smoke": "playwright test e2e/smoke.spec.ts",
+    "validate-data": "tsx scripts/validate-data.ts",
+    "validate-data:fix": "tsx scripts/validate-data.ts --fix",
+    "check:contract": "npx tsx scripts/check-contract.ts",
+    "prepare": "cd .. && husky api-test/.husky"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@nexqa/cli": "workspace:*",
+    "@playwright/test": "^1.59.0",
+    "husky": "^9.1.7",
+    "rollup-plugin-visualizer": "^7.0.1",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.4"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@biomejs/biome",
+      "esbuild"
+    ]
+  }
+}

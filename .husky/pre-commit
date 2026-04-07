@@ -1,0 +1,24 @@
+#!/usr/bin/env sh
+
+# 前后端契约检查
+echo "🔍 Checking frontend-backend contract..."
+if ! pnpm check:contract; then
+  echo "❌ Contract check failed! Fix mismatches before committing."
+  exit 1
+fi
+
+# 前端编译检查
+echo "🔨 Building frontend..."
+if ! pnpm --filter @nexqa/web build; then
+  echo "❌ Frontend build failed!"
+  exit 1
+fi
+
+# 后端编译检查
+echo "🔨 Building backend..."
+if ! pnpm --filter @nexqa/server build; then
+  echo "❌ Backend build failed!"
+  exit 1
+fi
+
+echo "✅ All checks passed!"
