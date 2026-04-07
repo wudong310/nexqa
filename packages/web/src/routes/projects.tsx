@@ -161,9 +161,14 @@ export function ProjectsPage() {
               <Link to="/p/$projectId/api" params={{ projectId: project.id }}>
                 <CardHeader className="cursor-pointer">
                   <CardTitle>{project.name}</CardTitle>
-                  <CardDescription className="flex items-center gap-1">
-                    <Globe className="h-3 w-3" />
-                    {project.baseURL}
+                  <CardDescription className="space-y-0.5">
+                    <span className="flex items-center gap-1">
+                      <Globe className="h-3 w-3" />
+                      {project.baseURL}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground/60 font-mono">
+                      ID: {project.id.slice(0, 8)}
+                    </span>
                   </CardDescription>
                 </CardHeader>
                 <CardContent>

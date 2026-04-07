@@ -88,6 +88,12 @@ export function EndpointRow({
             ) : (
               <ChevronDown className="h-3.5 w-3.5 shrink-0" />
             )}
+            {ep.summary && (
+              <span className="text-xs truncate shrink-0 max-w-[160px]">{ep.summary}</span>
+            )}
+            {ep.summary && (
+              <span className="text-xs text-muted-foreground shrink-0">·</span>
+            )}
             <span
               className={`text-xs font-bold px-1.5 py-0.5 rounded shrink-0 ${methodColor(ep.method)}`}
             >
@@ -156,11 +162,6 @@ export function EndpointRow({
               </span>
             </div>
           </div>
-          {ep.summary && (
-            <div className="text-xs text-muted-foreground truncate ml-[22px] mt-0.5">
-              {ep.summary}
-            </div>
-          )}
         </div>
       </div>
       {/* 展开的用例列表 */}

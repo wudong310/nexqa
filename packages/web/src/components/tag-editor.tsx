@@ -160,6 +160,12 @@ export function TagEditor({ tags: rawTags, onChange }: TagEditorProps) {
   );
 }
 
+// ── Tag value → Chinese label lookup ────────────────
+
+function tagLabel(value: string, options: readonly { readonly value: string; readonly label: string }[]): string {
+  return options.find((o) => o.value === value)?.label ?? value;
+}
+
 // ── Compact tag display (for list items) ────────────
 
 interface TagBadgesProps {
@@ -177,7 +183,7 @@ export function TagBadges({ tags: rawTags, compact }: TagBadgesProps) {
         </Badge>
         {tags.phase.map((p) => (
           <Badge key={p} variant="outline" className="text-[10px] h-4 px-1">
-            {p}
+            {tagLabel(p, PHASE_OPTIONS)}
           </Badge>
         ))}
       </div>
@@ -191,17 +197,17 @@ export function TagBadges({ tags: rawTags, compact }: TagBadgesProps) {
       </Badge>
       {tags.purpose.map((p) => (
         <Badge key={`pu-${p}`} variant="secondary" className="text-[10px] h-4 px-1">
-          {p}
+          {tagLabel(p, PURPOSE_OPTIONS)}
         </Badge>
       ))}
       {tags.strategy.map((s) => (
         <Badge key={`st-${s}`} variant="secondary" className="text-[10px] h-4 px-1">
-          {s}
+          {tagLabel(s, STRATEGY_OPTIONS)}
         </Badge>
       ))}
       {tags.phase.map((p) => (
         <Badge key={`ph-${p}`} variant="outline" className="text-[10px] h-4 px-1">
-          {p}
+          {tagLabel(p, PHASE_OPTIONS)}
         </Badge>
       ))}
     </div>

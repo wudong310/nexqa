@@ -19,7 +19,7 @@ const STRATEGY_STYLES: Record<CaseGenStrategy, { label: string; cls: string; too
   destructive: { label: "破坏性", cls: "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300", tooltip: "验证接口在极端条件下的稳定性（超大数据、特殊字符、并发等）" },
 };
 const ALL_STRATEGIES: CaseGenStrategy[] = ["positive", "negative", "boundary", "destructive"];
-const DEFAULT_STRATEGIES: CaseGenStrategy[] = ["positive"];
+const DEFAULT_STRATEGIES: CaseGenStrategy[] = [...ALL_STRATEGIES];
 
 // ── Purpose options ─────────────────────────────────
 const PURPOSE_OPTIONS: Array<{ value: CaseGenPurpose; label: string; desc: string }> = [
@@ -30,7 +30,8 @@ const PURPOSE_OPTIONS: Array<{ value: CaseGenPurpose; label: string; desc: strin
   { value: "idempotent", label: "幂等性测试", desc: "重复请求结果一致、无副作用" },
   { value: "performance", label: "性能测试", desc: "响应时间、超时边界验证" },
 ];
-const DEFAULT_PURPOSES: CaseGenPurpose[] = ["functional"];
+const ALL_PURPOSES: CaseGenPurpose[] = PURPOSE_OPTIONS.map(p => p.value);
+const DEFAULT_PURPOSES: CaseGenPurpose[] = [...ALL_PURPOSES];
 
 // ── Methods that need data isolation ────────────────
 const ISOLATION_METHODS = new Set(["DELETE", "PUT", "PATCH"]);
