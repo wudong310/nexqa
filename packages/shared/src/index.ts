@@ -1,6 +1,7 @@
 export * from "./schemas/settings.js";
 export * from "./schemas/project.js";
 export * from "./schemas/api-doc.js";
+export * from "./schemas/api-document.js";
 export * from "./schemas/test-case.js";
 export * from "./schemas/test-result.js";
 export * from "./schemas/environment.js";

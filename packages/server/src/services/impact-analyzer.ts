@@ -282,7 +282,7 @@ export async function analyzeImpact(
   const projectEndpointIds = new Set(
     allEndpoints.filter((e) => e.projectId === projectId).map((e) => e.id),
   );
-  const projectCases = allCases.filter((tc) => projectEndpointIds.has(tc.endpointId));
+  const projectCases = allCases.filter((tc) => tc.endpointId != null && projectEndpointIds.has(tc.endpointId));
 
   // Load test chains
   const allChains = await storage.list<any>("test-chains");

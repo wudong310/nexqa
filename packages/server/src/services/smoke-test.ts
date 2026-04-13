@@ -402,7 +402,7 @@ export async function generateSmokePlan(
 
   const allCases = await storage.list<TestCase>("test-cases");
   const endpointIds = new Set(projectEndpoints.map((ep) => ep.id));
-  const projectCases = allCases.filter((tc) => endpointIds.has(tc.endpointId));
+  const projectCases = allCases.filter((tc) => tc.endpointId != null && endpointIds.has(tc.endpointId));
 
   if (projectCases.length === 0) {
     return {

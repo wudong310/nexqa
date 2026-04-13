@@ -376,7 +376,7 @@ async function loadProjectContext(projectId: string): Promise<ProjectContext> {
       .map((ep) => ep.id),
   );
   const projectCases = allCases.filter((tc) =>
-    projectEndpointIds.has(tc.endpointId),
+    tc.endpointId != null && projectEndpointIds.has(tc.endpointId),
   );
 
   const allChains = await storage.list<TestChain>("test-chains");

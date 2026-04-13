@@ -273,7 +273,7 @@ export const projectRegressionRoutes = new Hono()
     const projectEndpointIds = new Set(
       allEndpoints.filter((e) => e.projectId === projectId).map((e) => e.id),
     );
-    const projectCases = allCases.filter((tc) => projectEndpointIds.has(tc.endpointId));
+    const projectCases = allCases.filter((tc) => tc.endpointId != null && projectEndpointIds.has(tc.endpointId));
     const smokeCaseIds = projectCases
       .filter((tc) => {
         const tags = tc.tags as any;

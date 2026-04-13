@@ -57,11 +57,12 @@ export async function calculateCoverage(projectId: string): Promise<CoverageResu
   // 2. 获取项目的所有测试用例
   const allCases = await storage.list<TestCase>("test-cases");
   const endpointIds = new Set(endpoints.map((ep) => ep.id));
-  const cases = allCases.filter((tc) => endpointIds.has(tc.endpointId));
+  const cases = allCases.filter((tc) => tc.endpointId != null && endpointIds.has(tc.endpointId));
 
   // 3. 按 endpointId 分组用例
   const casesByEndpoint = new Map<string, TestCase[]>();
   for (const tc of cases) {
+    if (!tc.endpointId) continue;
     const arr = casesByEndpoint.get(tc.endpointId) || [];
     arr.push(tc);
     casesByEndpoint.set(tc.endpointId, arr);

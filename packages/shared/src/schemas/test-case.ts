@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ApiChangeFlagSchema } from "./api-document.js";
 
 export const TestCaseRequestSchema = z.object({
   method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]),
@@ -55,11 +56,12 @@ export type TestCaseTags = z.infer<typeof TestCaseTagsSchema>;
 
 export const TestCaseSchema = z.object({
   id: z.string().uuid(),
-  endpointId: z.string().uuid(),
+  endpointId: z.string().uuid().nullable().default(null),
   name: z.string().min(1),
   request: TestCaseRequestSchema,
   expected: TestCaseExpectedSchema,
   tags: TestCaseTagsSchema.default({ purpose: ["functional"], strategy: ["positive"], phase: ["full"], priority: "P1" }),
+  apiChangeFlag: ApiChangeFlagSchema.optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });

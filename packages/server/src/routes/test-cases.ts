@@ -7,6 +7,7 @@ import {
   GENERATE_TEST_CASES_SYSTEM,
   buildGenerateUserPrompt,
 } from "../prompts/index.js";
+import { linkTestCaseEndpoint } from "../services/api-document-service.js";
 import { createLlmModel } from "../services/llm.js";
 import { createLogger } from "../services/logger.js";
 import { storage } from "../services/storage.js";
@@ -70,7 +71,7 @@ export const testCaseRoutes = new Hono()
         await storage.list<{ id: string; projectId: string }>("api-endpoints")
       ).filter((ep) => ep.projectId === projectId);
       const epIds = new Set(endpoints.map((ep) => ep.id));
-      filtered = filtered.filter((tc) => epIds.has(tc.endpointId));
+      filtered = filtered.filter((tc) => tc.endpointId != null && epIds.has(tc.endpointId));
     }
     return c.json(filtered);
   })
@@ -167,4 +168,20 @@ export const testCaseRoutes = new Hono()
     }
 
     return result.toDataStreamResponse();
+  })
+  .post("/:id/link-endpoint", async (c) => {
+    const id = c.req.param("id");
+    const body = await c.req.json<{ endpointId: string | null }>();
+
+    if (body.endpointId === undefined) {
+      return c.json({ error: "endpointId \u5fc5\u586b\uff08\u53ef\u4e3a null\uff09" }, 400);
+    }
+
+    try {
+      const updated = await linkTestCaseEndpoint(id, body.endpointId);
+      return c.json(updated);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return c.json({ error: message }, 404);
+    }
   });

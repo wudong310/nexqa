@@ -144,8 +144,8 @@ export async function generateReport(batchRunId: string): Promise<TestReport> {
     const tc = caseMap.get(r.caseId);
     let epKey = "unknown";
     if (tc) {
-      const ep = epMap.get(tc.endpointId);
-      epKey = ep ? `${ep.method} ${ep.path}` : tc.endpointId;
+      const ep = tc.endpointId ? epMap.get(tc.endpointId) : undefined;
+      epKey = ep ? `${ep.method} ${ep.path}` : tc.endpointId || "unknown";
       byEndpoint[epKey] = (byEndpoint[epKey] || 0) + 1;
       // 按目的
       const tags = safeTags(tc.tags as TestCaseTags);
@@ -168,7 +168,7 @@ export async function generateReport(batchRunId: string): Promise<TestReport> {
   // 构建全部用例详情（含通过+失败）
   const caseDetails = testResults.map((r) => {
     const tc = caseMap.get(r.caseId);
-    const ep = tc ? epMap.get(tc.endpointId) : undefined;
+    const ep = tc?.endpointId ? epMap.get(tc.endpointId) : undefined;
     const epKey = ep ? `${ep.method} ${ep.path}` : tc?.endpointId || "unknown";
     return {
       caseId: r.caseId,

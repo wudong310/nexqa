@@ -10,16 +10,30 @@ const COLLECTION = "api-endpoints";
 export const apiEndpointRoutes = new Hono()
   .get("/", async (c) => {
     const projectId = c.req.query("projectId");
+    const documentId = c.req.query("documentId");
     const all = await storage.list<ApiEndpoint>(COLLECTION);
-    const filtered = projectId
+    let filtered = projectId
       ? all.filter((ep) => ep.projectId === projectId)
       : all;
+    if (documentId) {
+      filtered = filtered.filter((ep) => ep.documentId === documentId);
+    }
     filtered.sort((a, b) => {
       const cmp = a.path.localeCompare(b.path);
       if (cmp !== 0) return cmp;
       return a.method.localeCompare(b.method);
     });
     return c.json(filtered);
+  })
+  .get("/:id", async (c) => {
+    const id = c.req.param("id");
+    const ep = await storage.read<ApiEndpoint>(COLLECTION, id);
+    if (!ep) return c.json({ error: "端点不存在" }, 404);
+    const allCases = await storage.list<{ id: string; name: string; endpointId: string | null; apiChangeFlag?: unknown }>("test-cases");
+    const testCases = allCases
+      .filter((tc) => tc.endpointId === id)
+      .map((tc) => ({ id: tc.id, name: tc.name, apiChangeFlag: tc.apiChangeFlag ?? null }));
+    return c.json({ ...ep, testCases });
   })
   .post("/import", async (c) => {
     const { projectId, endpoints } = await c.req.json<{
@@ -58,6 +72,7 @@ export const apiEndpointRoutes = new Hono()
         const newEp: ApiEndpoint = {
           id: uuid(),
           projectId,
+          documentId: null,
           method: ep.method,
           path: ep.path,
           summary: ep.summary,

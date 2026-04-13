@@ -404,7 +404,7 @@ export const testExecRoutes = new Hono()
 
     // 1. Resolve matched test cases (same logic as batch-runs create)
     const allCases = await storage.list<TestCase>("test-cases");
-    let matchedCases = allCases.filter((tc) => tc.endpointId);
+    let matchedCases = allCases.filter((tc) => tc.endpointId != null);
 
     if (input.caseIds && input.caseIds.length > 0) {
       const caseIdSet = new Set(input.caseIds);
@@ -414,7 +414,7 @@ export const testExecRoutes = new Hono()
     if (input.endpointIds && input.endpointIds.length > 0) {
       const endpointIdSet = new Set(input.endpointIds);
       matchedCases = matchedCases.filter((tc) =>
-        endpointIdSet.has(tc.endpointId),
+        tc.endpointId != null && endpointIdSet.has(tc.endpointId),
       );
     }
 

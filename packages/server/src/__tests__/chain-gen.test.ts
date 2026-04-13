@@ -14,6 +14,7 @@ function makeEndpoint(
   return {
     id,
     projectId: "proj-1",
+    documentId: null,
     method: overrides.method as ApiEndpoint["method"],
     path: overrides.path,
     summary: overrides.summary || "",

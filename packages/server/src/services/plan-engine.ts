@@ -100,7 +100,7 @@ export function filterCasesBySelection(
   // 2. 按 endpointIds 筛选
   if (selection.endpointIds && selection.endpointIds.length > 0) {
     const idSet = new Set(selection.endpointIds);
-    matched = matched.filter((tc) => idSet.has(tc.endpointId));
+    matched = matched.filter((tc) => tc.endpointId != null && idSet.has(tc.endpointId));
   }
 
   // 3. 按 tags 筛选（多条件取交集）
@@ -151,7 +151,7 @@ export async function executePlan(
   // 1. 加载所有测试用例
   const allCases = await storage.list<TestCase>("test-cases");
   // 过滤当前项目的用例（通过 endpoint 关联）
-  const projectCases = allCases.filter((tc) => tc.endpointId);
+  const projectCases = allCases.filter((tc) => tc.endpointId != null);
 
   // 2. 根据 selection 筛选用例
   const matchedCases = filterCasesBySelection(projectCases, plan.selection);

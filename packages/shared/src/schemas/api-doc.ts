@@ -38,6 +38,7 @@ export type Endpoint = z.infer<typeof EndpointSchema>;
 export const ApiEndpointSchema = z.object({
   id: z.string().uuid(),
   projectId: z.string().uuid(),
+  documentId: z.string().uuid().nullable().default(null),
   method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]),
   path: z.string(),
   summary: z.string().default(""),

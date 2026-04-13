@@ -34,7 +34,7 @@ export const batchRunRoutes = new Hono()
     // Determine how many test cases match the filter
     const allCases = await storage.list<TestCase>("test-cases");
     let matchedCases = allCases.filter(
-      (tc) => tc.endpointId // must belong to an endpoint
+      (tc) => tc.endpointId != null // must belong to an endpoint
     );
 
     // Filter by project — test cases don't have projectId directly,
@@ -48,7 +48,7 @@ export const batchRunRoutes = new Hono()
     if (input.endpointIds && input.endpointIds.length > 0) {
       const endpointIdSet = new Set(input.endpointIds);
       matchedCases = matchedCases.filter((tc) =>
-        endpointIdSet.has(tc.endpointId),
+        tc.endpointId != null && endpointIdSet.has(tc.endpointId),
       );
     }
 
