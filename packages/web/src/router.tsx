@@ -1,4 +1,5 @@
 import { AppShell } from "@/components/layout/app-shell";
+import { ApiManagementPage } from "@/routes/api-management";
 import { ApiTestPage } from "@/routes/api-test";
 import { CICDPage } from "@/routes/cicd";
 import { CoveragePage } from "@/routes/coverage";
@@ -55,6 +56,12 @@ const apiImportRoute = createRoute({
     throw redirect({ to: "/p/$projectId/api", params: { projectId: params.projectId } });
   },
   component: () => null,
+});
+
+const apiManagementRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/p/$projectId/api-management",
+  component: ApiManagementPage,
 });
 
 const testChainsRoute = createRoute({
@@ -129,6 +136,7 @@ const routeTree = rootRoute.addChildren([
   dashboardRoute,
   apiTestRoute,
   apiImportRoute,
+  apiManagementRoute,
   testChainsRoute,
   testPlansRoute,
   coverageRoute,

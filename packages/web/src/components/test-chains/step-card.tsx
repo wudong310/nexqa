@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ApiChangeBadge } from "@/components/api-management/api-change-badge";
 import { cn } from "@/lib/utils";
 import type { Extractor, Injector, TestCase } from "@nexqa/shared";
 import { useSortable } from "@dnd-kit/sortable";
@@ -197,6 +198,9 @@ export function StepCard({
                 <span className="text-xs font-mono text-muted-foreground truncate hidden sm:inline">
                   {method} {testCase.request.path}
                 </span>
+              )}
+              {testCase?.apiChangeFlag && (
+                <ApiChangeBadge flag={testCase.apiChangeFlag} />
               )}
             </div>
 

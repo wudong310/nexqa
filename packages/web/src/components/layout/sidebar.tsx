@@ -15,6 +15,7 @@ import {
   ClipboardList,
   FileText,
   FlaskConical,
+  FolderOpen,
   GitCompare,
   Globe,
   LayoutDashboard,
@@ -37,8 +38,13 @@ const projectNavItems = [
   },
   {
     to: "/p/$projectId/api" as const,
-    label: "API 测试",
+    label: "测试用例",
     icon: FlaskConical,
+  },
+  {
+    to: "/p/$projectId/api-management" as const,
+    label: "API 管理",
+    icon: FolderOpen,
   },
   {
     to: "/p/$projectId/chains" as const,

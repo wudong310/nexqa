@@ -1,5 +1,6 @@
 import { TagBadges, safeTags } from "@/components/tag-editor";
 import { Button } from "@/components/ui/button";
+import { ApiChangeBadge } from "@/components/api-management/api-change-badge";
 import type { TestCase, TestResult } from "@nexqa/shared";
 import { CheckCircle, Trash2, XCircle } from "lucide-react";
 
@@ -39,6 +40,7 @@ export function CaseItem({
           </span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {tc.apiChangeFlag && <ApiChangeBadge flag={tc.apiChangeFlag} />}
           {latest ? (
             latest.passed ? (
               <span className="flex items-center gap-0.5 text-xs text-green-600">
