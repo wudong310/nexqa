@@ -87,6 +87,7 @@ export interface ApiDiffResult {
 
 export interface ConfirmUpdateRequest {
   contentHash: string;
+  content: string;
   acceptAdded: string[];
   acceptModified: string[];
   acceptRemoved: string[];

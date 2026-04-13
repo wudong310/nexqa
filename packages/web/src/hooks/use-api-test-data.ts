@@ -68,7 +68,7 @@ export function useApiTestData({
   }, [allCases, tagFilter]);
 
   const moduleGroups = useMemo(() => {
-    const casesByEp = new Map<string, TestCase[]>();
+    const casesByEp = new Map<string | null, TestCase[]>();
     for (const tc of filteredCases) {
       const list = casesByEp.get(tc.endpointId) || [];
       list.push(tc);
@@ -245,7 +245,7 @@ export function useApiTestData({
       checkedEpIds.size > 0
         ? checkedEpIds
         : new Set(endpoints.map((ep) => ep.id));
-    const targets = filteredCases.filter((tc) => epIds.has(tc.endpointId));
+    const targets = filteredCases.filter((tc) => tc.endpointId != null && epIds.has(tc.endpointId));
     const result = await runBatch(targets, (tc) => execMutation.mutateAsync(tc), onProgress);
     queryClient.invalidateQueries({ queryKey: ["test-results", projectId] });
     return result;

@@ -34,7 +34,7 @@ export const apiDocumentsApi = {
 
   /** Delete a document and all its endpoints */
   delete: (id: string) =>
-    api.post<{ success: boolean }>(`/api-documents/${id}/delete`, {}),
+    api.delete<{ success: boolean }>(`/api-documents/${id}`),
 };
 
 // ── API Endpoint endpoints ──────────────────────────
@@ -58,8 +58,8 @@ export const apiEndpointsApi = {
   /** Delete an endpoint */
   delete: (id: string) =>
     api.post<{ success: boolean; affectedCases: string[] }>(
-      `/api-endpoints/${id}/delete`,
-      {},
+      `/api-endpoints/delete`,
+      { id },
     ),
 };
 

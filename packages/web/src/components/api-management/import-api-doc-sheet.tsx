@@ -193,6 +193,7 @@ export function ImportApiDocSheet({
         id: diffResult.documentId,
         data: {
           contentHash: importResult.document.contentHash,
+          content,
           acceptAdded: diffResult.added.map((a) => a.tempId),
           acceptModified: diffResult.modified.map((m) => m.endpointId),
           acceptRemoved: diffResult.removed.map((r) => r.tempId),
