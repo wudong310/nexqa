@@ -180,7 +180,7 @@ export function SmokeConfirmSheet({
               <div className="space-y-1.5">
                 <h3 className="text-sm font-semibold">暂无冒烟用例</h3>
                 <p className="text-xs text-muted-foreground leading-relaxed max-w-[320px]">
-                  当前项目暂无冒烟标记的测试用例，请先在 API 测试页为核心接口添加用例
+                  当前项目暂无冒烟标记的测试用例，请先在测试用例页为核心接口添加用例
                 </p>
               </div>
               {projectId && (
@@ -190,7 +190,7 @@ export function SmokeConfirmSheet({
                     params={{ projectId }}
                   >
                     <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
-                    前往 API 测试
+                    前往测试用例
                   </Link>
                 </Button>
               )}

@@ -214,7 +214,7 @@ export function ApiTestPage() {
         {/* ── 页面头部：标题 + 操作按钮 ── */}
         <div className="flex items-center justify-between shrink-0">
           <div>
-            <h1 className="text-2xl font-bold">API 测试</h1>
+            <h1 className="text-2xl font-bold">测试用例</h1>
             <p className="text-sm text-muted-foreground">
               管理和验证 API 接口的测试用例
             </p>

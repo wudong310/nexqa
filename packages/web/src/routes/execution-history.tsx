@@ -579,14 +579,14 @@ export function ExecutionHistoryPage() {
         <EmptyState
           icon={<Clock className="h-12 w-12" />}
           title="还没有执行记录"
-          description="执行 API 测试后，BatchRun 结果将在这里展示"
+          description="执行测试用例后，BatchRun 结果将在这里展示"
           action={
             <Button
               onClick={() =>
                 navigate({ to: "/p/$projectId/api", params: { projectId } })
               }
             >
-              去 API 测试
+              去测试用例
             </Button>
           }
         />

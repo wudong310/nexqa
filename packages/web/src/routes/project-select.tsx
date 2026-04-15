@@ -107,7 +107,7 @@ export function ProjectSelectPage() {
               <DialogHeader>
                 <DialogTitle>新建项目</DialogTitle>
                 <DialogDescription>
-                  创建一个新的 API 测试项目。
+                  创建一个新的测试项目。
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
@@ -183,7 +183,7 @@ export function ProjectSelectPage() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>新建项目</DialogTitle>
-              <DialogDescription>创建一个新的 API 测试项目。</DialogDescription>
+              <DialogDescription>创建一个新的测试项目。</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">

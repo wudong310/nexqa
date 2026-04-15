@@ -211,7 +211,7 @@ export function ProjectsPage() {
             <DialogDescription>
               {editingProject
                 ? "更新你的项目设置。"
-                : "创建一个新的 API 测试项目。"}
+                : "创建一个新的测试项目。"}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">

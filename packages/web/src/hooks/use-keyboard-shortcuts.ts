@@ -44,7 +44,7 @@ export const SHORTCUTS: ShortcutDef[] = [
     id: "new-case",
     label: "新建用例",
     display: "⌘ N",
-    description: "新建测试用例（当前在 API 测试页时）",
+    description: "新建测试用例（当前在测试用例页时）",
     key: "n",
     mod: true,
   },

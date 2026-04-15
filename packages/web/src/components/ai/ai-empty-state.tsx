@@ -28,7 +28,7 @@ export interface AIEmptyStateProps {
  *     <Button variant="outline" size="sm" asChild>
  *       <Link to="/p/$projectId/api" params={{ projectId }}>
  *         <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
- *         前往 API 测试
+ *         前往测试用例
  *       </Link>
  *     </Button>
  *   }
