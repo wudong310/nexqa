@@ -11,8 +11,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
-const WEB_SRC = path.join(ROOT, "packages/web/src");
-const SERVER_SRC = path.join(ROOT, "packages/server/src");
+const WEB_SRC = path.join(ROOT, "apps/frontend/src");
+const SERVER_SRC = path.join(ROOT, "apps/backend/src");
 
 // ── Helpers ─────────────────────────────────────────
 

@@ -2,7 +2,7 @@
  * migrate-json-to-sqlite.ts
  *
  * Migrates existing JSON file storage to SQLite.
- * Run: npx tsx packages/server/src/scripts/migrate-json-to-sqlite.ts
+ * Run: npx tsx apps/backend/src/scripts/migrate-json-to-sqlite.ts
  *
  * - Scans the data directory for collection subdirectories
  * - Imports all .json files into the kv_store table

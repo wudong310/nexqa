@@ -19,7 +19,7 @@
   },
   "overrides": [
     {
-      "include": ["packages/server/src/**/*.ts"],
+      "include": ["apps/backend/src/**/*.ts"],
       "linter": {
         "rules": {
           "style": {
