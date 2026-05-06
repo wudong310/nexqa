@@ -16,6 +16,7 @@ import {
   FileText,
   FlaskConical,
   FolderOpen,
+  GitBranch,
   GitCompare,
   Globe,
   LayoutDashboard,
@@ -45,6 +46,11 @@ const projectNavItems = [
     to: "/p/$projectId/api-management" as const,
     label: "API 管理",
     icon: FolderOpen,
+  },
+  {
+    to: "/p/$projectId/git-sources" as const,
+    label: "源码分析",
+    icon: GitBranch,
   },
   {
     to: "/p/$projectId/chains" as const,

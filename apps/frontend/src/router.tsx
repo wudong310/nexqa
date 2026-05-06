@@ -6,6 +6,7 @@ import { CoveragePage } from "@/routes/coverage";
 import { DashboardPage } from "@/routes/dashboard";
 import { EnvironmentsPage } from "@/routes/environments";
 import { ExecutionHistoryPage } from "@/routes/execution-history";
+import { GitSourcesPage } from "@/routes/git-sources";
 import { OpenClawPage } from "@/routes/openclaw";
 import { ProjectSelectPage } from "@/routes/project-select";
 import { ProjectSettingsPage } from "@/routes/project-settings";
@@ -124,6 +125,12 @@ const securityReportRoute = createRoute({
   component: SecurityReportPage,
 });
 
+const gitSourcesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/p/$projectId/git-sources",
+  component: GitSourcesPage,
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings",
@@ -146,6 +153,7 @@ const routeTree = rootRoute.addChildren([
   environmentsRoute,
   cicdRoute,
   openclawRoute,
+  gitSourcesRoute,
   projectSettingsRoute,
   settingsRoute,
 ]);
