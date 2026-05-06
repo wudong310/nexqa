@@ -81,6 +81,9 @@ export const apiEndpointRoutes = new Hono()
           pathParams: ep.pathParams,
           body: ep.body,
           responses: ep.responses,
+          sourceType: "manual",
+          gitSourceId: null,
+          lastScanId: null,
           createdAt: now,
           updatedAt: now,
         };

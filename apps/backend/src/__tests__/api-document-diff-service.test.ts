@@ -25,6 +25,9 @@ function makeApiEndpoint(overrides: Partial<ApiEndpoint> & { method: string; pat
     pathParams: overrides.pathParams || [],
     body: overrides.body,
     responses: overrides.responses || [],
+    sourceType: overrides.sourceType || "document",
+    gitSourceId: overrides.gitSourceId || null,
+    lastScanId: overrides.lastScanId || null,
     createdAt: overrides.createdAt || new Date().toISOString(),
     updatedAt: overrides.updatedAt || new Date().toISOString(),
   };

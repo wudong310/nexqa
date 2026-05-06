@@ -23,6 +23,9 @@ function makeEndpoint(
     pathParams: overrides.pathParams || [],
     body: overrides.body,
     responses: overrides.responses || [],
+    sourceType: "manual",
+    gitSourceId: null,
+    lastScanId: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };

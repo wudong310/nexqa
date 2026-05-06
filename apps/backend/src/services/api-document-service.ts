@@ -234,6 +234,9 @@ export async function confirmUpdate(
         pathParams: ep.pathParams,
         body: ep.body,
         responses: ep.responses,
+        sourceType: "document",
+        gitSourceId: null,
+        lastScanId: null,
         createdAt: now,
         updatedAt: now,
       };
@@ -374,6 +377,9 @@ async function createEndpoints(
       pathParams: ep.pathParams,
       body: ep.body,
       responses: ep.responses,
+      sourceType: "document",
+      gitSourceId: null,
+      lastScanId: null,
       createdAt: now,
       updatedAt: now,
     };
