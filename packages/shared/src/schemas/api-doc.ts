@@ -53,6 +53,9 @@ export const ApiEndpointSchema = z.object({
     })
     .optional(),
   responses: z.array(EndpointResponseSchema).default([]),
+  sourceType: z.enum(["manual", "document", "git-scan"]).default("manual"),
+  gitSourceId: z.string().uuid().nullable().default(null),
+  lastScanId: z.string().uuid().nullable().default(null),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
