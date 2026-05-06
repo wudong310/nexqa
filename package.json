@@ -28,7 +28,8 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "@biomejs/biome",
-      "esbuild"
+      "esbuild",
+      "better-sqlite3"
     ]
   }
 }

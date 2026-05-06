@@ -1,10 +1,13 @@
 import { readFileSync } from "node:fs";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import Database from "better-sqlite3";
+import type BetterSqlite3 from "better-sqlite3";
 
 const DEFAULT_DATA_DIR = join(homedir(), "Datas", "api-test");
 const SETTINGS_PATH = join(DEFAULT_DATA_DIR, "settings.json");
+const DB_FILENAME = "nexqa.db";
 
 function getDataDir(): string {
   try {
@@ -19,40 +22,94 @@ function getDefaultDataDir(): string {
   return DEFAULT_DATA_DIR;
 }
 
-async function ensureDir(dir: string): Promise<void> {
-  await mkdir(dir, { recursive: true });
+// ── SQLite Database Singleton ─────────────────────────────────────────────
+
+let _db: BetterSqlite3.Database | null = null;
+
+function getDb(): BetterSqlite3.Database {
+  if (_db) return _db;
+
+  const dataDir = getDataDir();
+  mkdirSync(dataDir, { recursive: true });
+
+  const dbPath = join(dataDir, DB_FILENAME);
+  _db = new Database(dbPath);
+
+  // Enable WAL mode for better concurrent read performance
+  _db.pragma("journal_mode = WAL");
+
+  // Create tables
+  _db.exec(`
+    CREATE TABLE IF NOT EXISTS kv_store (
+      collection TEXT NOT NULL,
+      id TEXT NOT NULL,
+      data TEXT NOT NULL,
+      PRIMARY KEY (collection, id)
+    );
+  `);
+
+  _db.exec(`
+    CREATE TABLE IF NOT EXISTS raw_files (
+      path TEXT PRIMARY KEY,
+      content TEXT NOT NULL
+    );
+  `);
+
+  return _db;
 }
+
+// ── Prepared Statements (lazy-initialized) ────────────────────────────────
+
+let _stmts: {
+  read: BetterSqlite3.Statement;
+  write: BetterSqlite3.Statement;
+  list: BetterSqlite3.Statement;
+  remove: BetterSqlite3.Statement;
+  readRaw: BetterSqlite3.Statement;
+  writeRaw: BetterSqlite3.Statement;
+} | null = null;
+
+function getStmts() {
+  if (_stmts) return _stmts;
+  const db = getDb();
+  _stmts = {
+    read: db.prepare("SELECT data FROM kv_store WHERE collection = ? AND id = ?"),
+    write: db.prepare(
+      "INSERT OR REPLACE INTO kv_store (collection, id, data) VALUES (?, ?, ?)",
+    ),
+    list: db.prepare("SELECT data FROM kv_store WHERE collection = ?"),
+    remove: db.prepare("DELETE FROM kv_store WHERE collection = ? AND id = ?"),
+    readRaw: db.prepare("SELECT content FROM raw_files WHERE path = ?"),
+    writeRaw: db.prepare(
+      "INSERT OR REPLACE INTO raw_files (path, content) VALUES (?, ?)",
+    ),
+  };
+  return _stmts;
+}
+
+// ── Storage API ───────────────────────────────────────────────────────────
 
 export const storage = {
   async read<T>(collection: string, id: string): Promise<T | null> {
     try {
-      const filePath = join(getDataDir(), collection, `${id}.json`);
-      const content = await readFile(filePath, "utf-8");
-      return JSON.parse(content) as T;
+      const row = getStmts().read.get(collection, id) as
+        | { data: string }
+        | undefined;
+      if (!row) return null;
+      return JSON.parse(row.data) as T;
     } catch {
       return null;
     }
   },
 
   async write<T>(collection: string, id: string, data: T): Promise<void> {
-    const dir = join(getDataDir(), collection);
-    await ensureDir(dir);
-    const filePath = join(dir, `${id}.json`);
-    await writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
+    getStmts().write.run(collection, id, JSON.stringify(data));
   },
 
   async list<T>(collection: string): Promise<T[]> {
-    const dir = join(getDataDir(), collection);
-    await ensureDir(dir);
     try {
-      const files = await readdir(dir);
-      const items: T[] = [];
-      for (const file of files) {
-        if (!file.endsWith(".json")) continue;
-        const content = await readFile(join(dir, file), "utf-8");
-        items.push(JSON.parse(content) as T);
-      }
-      return items;
+      const rows = getStmts().list.all(collection) as { data: string }[];
+      return rows.map((row) => JSON.parse(row.data) as T);
     } catch {
       return [];
     }
@@ -60,9 +117,8 @@ export const storage = {
 
   async remove(collection: string, id: string): Promise<boolean> {
     try {
-      const filePath = join(getDataDir(), collection, `${id}.json`);
-      await rm(filePath);
-      return true;
+      const result = getStmts().remove.run(collection, id);
+      return result.changes > 0;
     } catch {
       return false;
     }
@@ -70,18 +126,18 @@ export const storage = {
 
   async readRaw(relativePath: string): Promise<string | null> {
     try {
-      const filePath = join(getDataDir(), relativePath);
-      return await readFile(filePath, "utf-8");
+      const row = getStmts().readRaw.get(relativePath) as
+        | { content: string }
+        | undefined;
+      if (!row) return null;
+      return row.content;
     } catch {
       return null;
     }
   },
 
   async writeRaw(relativePath: string, content: string): Promise<void> {
-    const filePath = join(getDataDir(), relativePath);
-    const dir = filePath.substring(0, filePath.lastIndexOf("/"));
-    await ensureDir(dir);
-    await writeFile(filePath, content, "utf-8");
+    getStmts().writeRaw.run(relativePath, content);
   },
 };
 
