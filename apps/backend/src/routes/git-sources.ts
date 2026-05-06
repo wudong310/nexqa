@@ -1,4 +1,4 @@
-import type { GitSource } from "@nexqa/shared";
+import type { GitSource, ScanRecord } from "@nexqa/shared";
 import { GitSourceSchema } from "@nexqa/shared";
 import { Hono } from "hono";
 import { v4 as uuid } from "uuid";
@@ -92,4 +92,43 @@ export const gitSourceRoutes = new Hono()
     if (!existing) return c.json({ error: "Git source 不存在" }, 404);
     await storage.remove(COLLECTION, id);
     return c.json({ success: true });
+  })
+  .get("/:id/diff", async (c) => {
+    const id = c.req.param("id");
+    const gitSource = await storage.read<GitSource>(COLLECTION, id);
+    if (!gitSource) return c.json({ error: "Git source 不存在" }, 404);
+
+    // 获取该 GitSource 所有 scan-records，按 startedAt 倒序排
+    const allScans = await storage.list<ScanRecord>("scan-records");
+    const completedScans = allScans
+      .filter((s) => s.gitSourceId === id && s.status === "completed")
+      .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+
+    if (completedScans.length === 0) {
+      return c.json({
+        scanId: null,
+        previousScanId: null,
+        summary: { added: 0, updated: 0, removed: 0 },
+        changes: [],
+      });
+    }
+
+    const latestScan = completedScans[0];
+    const previousScan = completedScans.length > 1 ? completedScans[1] : null;
+
+    // 从最近一次 ScanRecord.result.changes 读取详细变更
+    const changes = latestScan.result?.changes ?? [];
+
+    const summary = {
+      added: latestScan.result?.endpointsNew ?? 0,
+      updated: latestScan.result?.endpointsUpdated ?? 0,
+      removed: latestScan.result?.endpointsRemoved ?? 0,
+    };
+
+    return c.json({
+      scanId: latestScan.id,
+      previousScanId: previousScan?.id ?? null,
+      summary,
+      changes,
+    });
   });

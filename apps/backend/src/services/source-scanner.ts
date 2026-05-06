@@ -12,6 +12,7 @@ import { glob } from "glob";
 import type { GitSource } from "@nexqa/shared";
 import type { ScanRecord, ScanResult } from "@nexqa/shared";
 import { createOpenClawClient } from "./openclaw-client.js";
+import { importEndpoints } from "./api-importer.js";
 import { storage } from "./storage.js";
 import { createLogger } from "./logger.js";
 
@@ -143,6 +144,7 @@ export async function runScan(
           endpointsNew: 0,
           endpointsUpdated: 0,
           endpointsRemoved: 0,
+          changes: [],
         },
         completedAt: new Date().toISOString(),
       };
@@ -162,12 +164,30 @@ export async function runScan(
     );
     log.info(`分析完成: 发现 ${endpoints.length} 个端点`);
 
-    // 5. 返回结果
+    // 5. 导入到 API 管理
+    scanRecord = { ...scanRecord, status: "importing" };
+    await saveScanRecord(scanRecord);
+
+    // 转换 body: null → undefined 以匹配 shared Endpoint 类型
+    const sharedEndpoints = endpoints.map((ep) => ({
+      ...ep,
+      body: ep.body ?? undefined,
+    }));
+
+    const importResult = await importEndpoints(sharedEndpoints, {
+      projectId: gitSource.projectId,
+      gitSourceId: gitSource.id,
+      scanId,
+    });
+    log.info(`导入完成: 新增=${importResult.added.length} 更新=${importResult.updated.length} 删除=${importResult.removed.length} 未变=${importResult.unchanged}`);
+
+    // 6. 返回结果
     const result: ScanResult = {
       endpointsFound: endpoints.length,
-      endpointsNew: endpoints.length,
-      endpointsUpdated: 0,
-      endpointsRemoved: 0,
+      endpointsNew: importResult.added.length,
+      endpointsUpdated: importResult.updated.length,
+      endpointsRemoved: importResult.removed.length,
+      changes: importResult.changes,
     };
 
     scanRecord = {

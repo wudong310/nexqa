@@ -5,11 +5,25 @@ export const ScanStatusSchema = z.enum([
 ]);
 export type ScanStatus = z.infer<typeof ScanStatusSchema>;
 
+export const ScanChangeSchema = z.object({
+  type: z.enum(["added", "updated", "removed"]),
+  method: z.string(),
+  path: z.string(),
+  summary: z.string().default(""),
+  endpointId: z.string().uuid().optional(),
+  fields: z.array(z.object({
+    field: z.string(),
+    detail: z.string(),
+  })).optional(),
+});
+export type ScanChange = z.infer<typeof ScanChangeSchema>;
+
 export const ScanResultSchema = z.object({
   endpointsFound: z.number().default(0),
   endpointsNew: z.number().default(0),
   endpointsUpdated: z.number().default(0),
   endpointsRemoved: z.number().default(0),
+  changes: z.array(ScanChangeSchema).default([]),
 });
 
 export const ScanRecordSchema = z.object({
