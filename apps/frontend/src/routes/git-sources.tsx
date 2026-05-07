@@ -1192,7 +1192,7 @@ export function GitSourcesPage() {
   });
 
   const connections = project?.openclawConnections ?? [];
-  const sources = data?.items ?? [];
+  const sources = Array.isArray(data) ? data : (data?.items ?? []);
 
   // Form sheet state
   const [formOpen, setFormOpen] = useState(false);
