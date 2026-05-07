@@ -36,7 +36,7 @@ import { toast } from "sonner";
 type ViewMode = "list" | "create" | "edit" | "result";
 
 export function TestChainsPage() {
-  const { projectId } = useParams({ from: "/p/$projectId/chains" });
+  const { projectId } = useParams({ from: "/p/$projectId/chains" as any }); // [HIDDEN] route disabled
 
   // State
   const [viewMode, setViewMode] = useState<ViewMode>("list");

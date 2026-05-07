@@ -26,7 +26,7 @@ import { useMemo, useState } from "react";
 
 export function SecurityReportPage() {
   const { projectId, taskId } = useParams({
-    from: "/p/$projectId/security/$taskId",
+    from: "/p/$projectId/security/$taskId" as any, // [HIDDEN] route disabled
   });
   const navigate = useNavigate();
 

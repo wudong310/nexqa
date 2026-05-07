@@ -539,7 +539,7 @@ function DraggableEnvCard({
 // ── Main Page ───────────────────────────────────────────
 
 export function EnvironmentsPage() {
-  const { projectId } = useParams({ from: "/p/$projectId/environments" });
+  const { projectId } = useParams({ from: "/p/$projectId/environments" as any }); // [HIDDEN] route disabled
   const queryClient = useQueryClient();
   const [formOpen, setFormOpen] = useState(false);
   const [editingEnv, setEditingEnv] = useState<Environment | null>(null);

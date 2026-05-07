@@ -60,8 +60,8 @@ export function WelcomeCard({ projectId, onStartSmoke }: WelcomeCardProps) {
             配置环境变量（API Token 等）
           </span>
           <Link
-            to="/p/$projectId/environments"
-            params={{ projectId }}
+            to={"/p/$projectId/environments" as any} // [HIDDEN] route disabled
+            params={{ projectId } as any}
           >
             <Button variant="outline" size="sm">
               <Globe className="h-3.5 w-3.5 mr-1" />

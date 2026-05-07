@@ -1,4 +1,5 @@
 import { PlanGenSheet } from "@/components/ai/plan-gen-sheet";
+import { PlanGenV2Dialog } from "@/components/plan-gen-v2/PlanGenV2Dialog";
 import { PlanCard } from "@/components/test-plans/plan-card";
 import { PlanDetailView } from "@/components/test-plans/plan-detail-view";
 import { PlanFormDialog } from "@/components/test-plans/plan-form-dialog";
@@ -19,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   TooltipProvider,
 } from "@/components/ui/tooltip";
+import { api } from "@/lib/api";
 import {
   useCreateTestPlan,
   useDeleteTestPlan,
@@ -27,10 +29,11 @@ import {
   useUpdateTestPlan,
 } from "@/hooks/use-test-plans";
 import { usePlanGenGenerate, usePlanGenAdopt } from "@/hooks/use-plan-gen";
-import type { CreateTestPlan, TestPlan } from "@nexqa/shared";
+import type { CreateTestPlan, TestPlan, Project } from "@nexqa/shared";
 import type { PlanGenerationResult } from "@/types/plan-gen";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { ClipboardList, Loader2, Plus, Sparkles } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { ClipboardList, Loader2, Plus, Sparkles, Wand2 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -151,7 +154,16 @@ export function TestPlansPage() {
   const [aiSheetOpen, setAiSheetOpen] = useState(false);
   const [aiResult, setAiResult] = useState<PlanGenerationResult | null>(null);
 
+  // V2 plan gen state
+  const [v2DialogOpen, setV2DialogOpen] = useState(false);
+
   // Queries & mutations
+  const { data: project } = useQuery<Project>({
+    queryKey: ["project", projectId],
+    queryFn: () => api.get(`/projects/detail?id=${projectId}`),
+  });
+  const openclawConnectionId = project?.openclawConnections?.[0]?.id ?? null;
+
   const { data: plans = [], isLoading } = useTestPlans(projectId);
   const createMutation = useCreateTestPlan(projectId);
   const updateMutation = useUpdateTestPlan(projectId);
@@ -235,8 +247,8 @@ export function TestPlansPage() {
             label: "查看进度",
             onClick: () =>
               navigate({
-                to: "/p/$projectId/history",
-                params: { projectId },
+                to: "/p/$projectId/history" as any, // [HIDDEN] route disabled
+                params: { projectId } as any,
               }),
           },
           duration: 5000,
@@ -371,6 +383,15 @@ export function TestPlansPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setV2DialogOpen(true)}
+              className="gap-1.5 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-300 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/30"
+            >
+              <Wand2 className="h-3.5 w-3.5" />
+              ✨ AI 智能生成(V2)
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -515,6 +536,14 @@ export function TestPlansPage() {
             }
           }}
           projectId={projectId}
+        />
+
+        {/* V2 Plan Gen Dialog */}
+        <PlanGenV2Dialog
+          open={v2DialogOpen}
+          onOpenChange={setV2DialogOpen}
+          projectId={projectId}
+          openclawConnectionId={openclawConnectionId}
         />
       </div>
     </TooltipProvider>

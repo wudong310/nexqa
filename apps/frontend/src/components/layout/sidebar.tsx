@@ -10,22 +10,21 @@ import {
 import { cn } from "@/lib/utils";
 import { Link, useLocation } from "@tanstack/react-router";
 import {
-  BarChart3,
-  Clock,
+  // [HIDDEN] 半成品，暂时屏蔽 — BarChart3 (覆盖率)
+  // [HIDDEN] 半成品，暂时屏蔽 — Clock (执行历史)
   ClipboardList,
-  FileText,
+  // [HIDDEN] 半成品，暂时屏蔽 — FileText (测试报告)
   FlaskConical,
   FolderOpen,
   GitBranch,
-  GitCompare,
-  Globe,
+  // [HIDDEN] 半成品，暂时屏蔽 — GitCompare (CI/CD)
+  // [HIDDEN] 半成品，暂时屏蔽 — Globe (环境管理)
   LayoutDashboard,
-  Link2,
+  // [HIDDEN] 半成品，暂时屏蔽 — Link2 (测试链)
   Menu,
   Plug,
   Settings,
   Settings2,
-  ShieldAlert,
   X,
 } from "lucide-react";
 import { useState } from "react";
@@ -52,41 +51,43 @@ const projectNavItems = [
     label: "源码分析",
     icon: GitBranch,
   },
-  {
-    to: "/p/$projectId/chains" as const,
-    label: "测试链",
-    icon: Link2,
-  },
+  // [HIDDEN] 半成品，暂时屏蔽 ────────────────────
+  // {
+  //   to: "/p/$projectId/chains" as const,
+  //   label: "测试链",
+  //   icon: Link2,
+  // },
   {
     to: "/p/$projectId/plans" as const,
     label: "测试方案",
     icon: ClipboardList,
   },
-  {
-    to: "/p/$projectId/coverage" as const,
-    label: "覆盖率",
-    icon: BarChart3,
-  },
-  {
-    to: "/p/$projectId/history" as const,
-    label: "执行历史",
-    icon: Clock,
-  },
-  {
-    to: "/p/$projectId/reports" as const,
-    label: "测试报告",
-    icon: FileText,
-  },
-  {
-    to: "/p/$projectId/environments" as const,
-    label: "环境管理",
-    icon: Globe,
-  },
-  {
-    to: "/p/$projectId/cicd" as const,
-    label: "CI/CD",
-    icon: GitCompare,
-  },
+  // {
+  //   to: "/p/$projectId/coverage" as const,
+  //   label: "覆盖率",
+  //   icon: BarChart3,
+  // },
+  // {
+  //   to: "/p/$projectId/history" as const,
+  //   label: "执行历史",
+  //   icon: Clock,
+  // },
+  // {
+  //   to: "/p/$projectId/reports" as const,
+  //   label: "测试报告",
+  //   icon: FileText,
+  // },
+  // {
+  //   to: "/p/$projectId/environments" as const,
+  //   label: "环境管理",
+  //   icon: Globe,
+  // },
+  // {
+  //   to: "/p/$projectId/cicd" as const,
+  //   label: "CI/CD",
+  //   icon: GitCompare,
+  // },
+  // ──────────────────── [/HIDDEN]
   {
     to: "/p/$projectId/openclaw" as const,
     label: "OpenClaw",

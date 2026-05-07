@@ -1,20 +1,22 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { ApiManagementPage } from "@/routes/api-management";
 import { ApiTestPage } from "@/routes/api-test";
-import { CICDPage } from "@/routes/cicd";
-import { CoveragePage } from "@/routes/coverage";
+// [HIDDEN] 半成品，暂时屏蔽
+// import { CICDPage } from "@/routes/cicd";
+// import { CoveragePage } from "@/routes/coverage";
 import { DashboardPage } from "@/routes/dashboard";
-import { EnvironmentsPage } from "@/routes/environments";
-import { ExecutionHistoryPage } from "@/routes/execution-history";
+// import { EnvironmentsPage } from "@/routes/environments";
+// import { ExecutionHistoryPage } from "@/routes/execution-history";
 import { GitSourcesPage } from "@/routes/git-sources";
 import { OpenClawPage } from "@/routes/openclaw";
 import { ProjectSelectPage } from "@/routes/project-select";
 import { ProjectSettingsPage } from "@/routes/project-settings";
 import { ProjectsPage } from "@/routes/projects";
-import { ReportsPage } from "@/routes/reports";
-import { SecurityReportPage } from "@/routes/security-report";
+// import { ReportsPage } from "@/routes/reports";
+// import { SecurityReportPage } from "@/routes/security-report";
 import { SettingsPage } from "@/routes/settings";
-import { TestChainsPage } from "@/routes/test-chains";
+// import { TestChainsPage } from "@/routes/test-chains";
+// [/HIDDEN]
 import { TestPlansPage } from "@/routes/test-plans";
 import {
   createRootRoute,
@@ -65,17 +67,18 @@ const apiManagementRoute = createRoute({
   component: ApiManagementPage,
 });
 
-const testChainsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/p/$projectId/chains",
-  component: TestChainsPage,
-});
+// [HIDDEN] 半成品，暂时屏蔽
+// const testChainsRoute = createRoute({
+//   getParentRoute: () => rootRoute,
+//   path: "/p/$projectId/chains",
+//   component: TestChainsPage,
+// });
 
-const executionHistoryRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/p/$projectId/history",
-  component: ExecutionHistoryPage,
-});
+// const executionHistoryRoute = createRoute({
+//   getParentRoute: () => rootRoute,
+//   path: "/p/$projectId/history",
+//   component: ExecutionHistoryPage,
+// });
 
 const testPlansRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -83,29 +86,29 @@ const testPlansRoute = createRoute({
   component: TestPlansPage,
 });
 
-const coverageRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/p/$projectId/coverage",
-  component: CoveragePage,
-});
+// const coverageRoute = createRoute({
+//   getParentRoute: () => rootRoute,
+//   path: "/p/$projectId/coverage",
+//   component: CoveragePage,
+// });
 
-const reportsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/p/$projectId/reports",
-  component: ReportsPage,
-});
+// const reportsRoute = createRoute({
+//   getParentRoute: () => rootRoute,
+//   path: "/p/$projectId/reports",
+//   component: ReportsPage,
+// });
 
-const environmentsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/p/$projectId/environments",
-  component: EnvironmentsPage,
-});
+// const environmentsRoute = createRoute({
+//   getParentRoute: () => rootRoute,
+//   path: "/p/$projectId/environments",
+//   component: EnvironmentsPage,
+// });
 
-const cicdRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/p/$projectId/cicd",
-  component: CICDPage,
-});
+// const cicdRoute = createRoute({
+//   getParentRoute: () => rootRoute,
+//   path: "/p/$projectId/cicd",
+//   component: CICDPage,
+// });
 
 const openclawRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -119,11 +122,12 @@ const projectSettingsRoute = createRoute({
   component: ProjectSettingsPage,
 });
 
-const securityReportRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/p/$projectId/security/$taskId",
-  component: SecurityReportPage,
-});
+// const securityReportRoute = createRoute({
+//   getParentRoute: () => rootRoute,
+//   path: "/p/$projectId/security/$taskId",
+//   component: SecurityReportPage,
+// });
+// [/HIDDEN]
 
 const gitSourcesRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -144,14 +148,16 @@ const routeTree = rootRoute.addChildren([
   apiTestRoute,
   apiImportRoute,
   apiManagementRoute,
-  testChainsRoute,
+  // [HIDDEN] 半成品，暂时屏蔽
+  // testChainsRoute,
   testPlansRoute,
-  coverageRoute,
-  executionHistoryRoute,
-  reportsRoute,
-  securityReportRoute,
-  environmentsRoute,
-  cicdRoute,
+  // coverageRoute,
+  // executionHistoryRoute,
+  // reportsRoute,
+  // securityReportRoute,
+  // environmentsRoute,
+  // cicdRoute,
+  // [/HIDDEN]
   openclawRoute,
   gitSourcesRoute,
   projectSettingsRoute,

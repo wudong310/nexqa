@@ -500,7 +500,7 @@ interface BatchRunListResponse {
 }
 
 export function ExecutionHistoryPage() {
-  const { projectId } = useParams({ from: "/p/$projectId/history" });
+  const { projectId } = useParams({ from: "/p/$projectId/history" as any }); // [HIDDEN] route disabled
   const navigate = useNavigate();
   const [selectedBatchRunId, setSelectedBatchRunId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");

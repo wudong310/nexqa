@@ -235,8 +235,8 @@ export function SecurityScanSheet({
               {projectId && (
                 <Button variant="outline" size="sm" asChild>
                   <Link
-                    to="/p/$projectId/environments"
-                    params={{ projectId }}
+                    to={"/p/$projectId/environments" as any} // [HIDDEN] route disabled
+                    params={{ projectId } as any}
                   >
                     <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
                     前往环境管理

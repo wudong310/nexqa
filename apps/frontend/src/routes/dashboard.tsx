@@ -337,8 +337,8 @@ export function DashboardPage() {
   const handleViewSecurityReport = useCallback(() => {
     if (securityScanId) {
       navigate({
-        to: "/p/$projectId/security/$taskId",
-        params: { projectId, taskId: securityScanId },
+        to: "/p/$projectId/security/$taskId" as any, // [HIDDEN] route disabled
+        params: { projectId, taskId: securityScanId } as any,
       });
     }
   }, [navigate, projectId, securityScanId]);
@@ -448,8 +448,8 @@ export function DashboardPage() {
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-semibold">最近执行</h2>
           <Link
-            to="/p/$projectId/history"
-            params={{ projectId }}
+            to={"/p/$projectId/history" as any} // [HIDDEN] route disabled
+            params={{ projectId } as any}
           >
             <Button variant="ghost" size="sm" className="text-xs">
               查看全部
@@ -503,8 +503,8 @@ export function DashboardPage() {
           status={floatingStatus}
           onViewDetail={() =>
             navigate({
-              to: "/p/$projectId/history",
-              params: { projectId },
+              to: "/p/$projectId/history" as any, // [HIDDEN] route disabled
+              params: { projectId } as any,
             })
           }
           onDismiss={() => setFloatingVisible(false)}

@@ -542,7 +542,7 @@ function ExecutionHistoryTab({ projectId }: { projectId: string }) {
 // ── CI/CD Page ──────────────────────────────────────────
 
 export function CICDPage() {
-  const { projectId } = useParams({ from: "/p/$projectId/cicd" });
+  const { projectId } = useParams({ from: "/p/$projectId/cicd" as any }); // [HIDDEN] route disabled
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
