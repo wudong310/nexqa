@@ -10,3 +10,4 @@ export * from "./schemas/test-plan.js";
 export * from "./schemas/test-chain.js";
 export * from "./schemas/git-source.js";
 export * from "./schemas/scan-record.js";
+export * from "./schemas/plan-generation-v2.js";
