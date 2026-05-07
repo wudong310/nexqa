@@ -23,6 +23,9 @@ function maskSettingsSecrets(settings: Settings): Settings {
   if (masked.llm?.apiKey) {
     masked.llm.apiKey = maskSecret(masked.llm.apiKey)!;
   }
+  if (masked.openclawToken) {
+    masked.openclawToken = maskSecret(masked.openclawToken)!;
+  }
   return masked;
 }
 

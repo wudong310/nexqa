@@ -49,6 +49,8 @@ export function SettingsPage() {
   const [dataDir, setDataDir] = useState("");
   const [logDir, setLogDir] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
+  const [openclawToken, setOpenclawToken] = useState("");
+  const [showGatewayToken, setShowGatewayToken] = useState(false);
 
   useEffect(() => {
     if (settings?.llm) {
@@ -60,6 +62,9 @@ export function SettingsPage() {
     if (settings?.storage) {
       setDataDir(settings.storage.dataDir || "");
       setLogDir(settings.storage.logDir || "");
+    }
+    if (settings?.openclawToken) {
+      setOpenclawToken(settings.openclawToken);
     }
   }, [settings]);
 
@@ -85,7 +90,27 @@ export function SettingsPage() {
       theme,
       language: settings?.language || "zh-CN",
       storage: settings?.storage,
+      openclawToken: settings?.openclawToken,
     });
+  };
+
+  const openclawTokenMutation = useMutation({
+    mutationFn: (token: string) =>
+      api.post<Settings>("/settings/update", {
+        ...settings,
+        openclawToken: token || undefined,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["settings"] });
+      toast.success("OpenClaw Token 已保存");
+    },
+    onError: (err: Error) => {
+      toast.error(`保存失败：${err.message}`);
+    },
+  });
+
+  const handleSaveOpenclawToken = () => {
+    openclawTokenMutation.mutate(openclawToken);
   };
 
   const storageMutation = useMutation({
@@ -285,6 +310,57 @@ export function SettingsPage() {
                 </span>
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>OpenClaw</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label>Gateway Token</Label>
+              <div className="relative">
+                <Input
+                  type={showGatewayToken ? "text" : "password"}
+                  placeholder="输入 OpenClaw Gateway 认证 Token"
+                  value={openclawToken}
+                  onChange={(e) => setOpenclawToken(e.target.value)}
+                  className="pr-10"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-0 top-0 h-full w-10 hover:bg-transparent"
+                  onClick={() => setShowGatewayToken((prev) => !prev)}
+                  tabIndex={-1}
+                >
+                  {showGatewayToken ? (
+                    <EyeOff className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <Eye className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                用于源码扫描和测试方案生成时连接 OpenClaw Gateway
+              </p>
+            </div>
+            <Button
+              onClick={handleSaveOpenclawToken}
+              disabled={openclawTokenMutation.isPending}
+              className="min-w-[80px]"
+            >
+              {openclawTokenMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  保存中...
+                </>
+              ) : (
+                "保存"
+              )}
+            </Button>
           </CardContent>
         </Card>
 

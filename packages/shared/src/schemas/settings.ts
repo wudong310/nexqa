@@ -25,5 +25,6 @@ export const SettingsSchema = z.object({
   theme: ThemeSchema.default("system"),
   language: z.enum(["zh-CN", "en"]).default("zh-CN"),
   storage: StorageConfigSchema.optional(),
+  openclawToken: z.string().optional(),
 });
 export type Settings = z.infer<typeof SettingsSchema>;
