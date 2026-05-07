@@ -18,6 +18,9 @@ export const OpenClawConnectionSchema = z.object({
 });
 export type OpenClawConnection = z.infer<typeof OpenClawConnectionSchema>;
 
+export const PlanGenVersionSchema = z.enum(["v1", "v2", "auto"]).default("auto");
+export type PlanGenVersion = z.infer<typeof PlanGenVersionSchema>;
+
 export const ProjectSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1),
@@ -29,6 +32,13 @@ export const ProjectSchema = z.object({
   /** O7: 持久化选中环境 ID */
   activeEnvironmentId: z.string().uuid().nullable().default(null),
   openclawConnections: z.array(OpenClawConnectionSchema).default([]),
+  /**
+   * 方案生成版本策略：
+   * - "auto"（默认）：有 OpenClaw 连接用 V2，无则降级 V1
+   * - "v1"：强制使用 V1（LLM 直调 + 规则引擎）
+   * - "v2"：强制使用 V2（OpenClaw Agent），无连接时报错
+   */
+  planGenVersion: PlanGenVersionSchema,
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -41,6 +51,7 @@ export const CreateProjectSchema = ProjectSchema.pick({
   variables: true,
   openclawConnections: true,
   activeEnvironmentId: true,
+  planGenVersion: true,
 }).extend({
   description: z.string().max(500).default(""),
 });
