@@ -52,6 +52,10 @@ export class OpenClawBackendClient {
   private _isConnected = false;
   private connecting: Promise<void> | null = null;
 
+  /** connect lifecycle callbacks */
+  private connectResolve: (() => void) | null = null;
+  private connectReject: ((err: Error) => void) | null = null;
+
   /** 用于请求-响应匹配 */
   private pendingRequests = new Map<string, PendingRequest>();
   /** 用于等待 chat 完整回复 */
@@ -101,20 +105,12 @@ export class OpenClawBackendClient {
 
       ws.on("open", () => {
         clearTimeout(connectTimeout);
-        log.info("WebSocket 连接已建立，开始认证");
+        log.info("WebSocket 连接已建立，等待 connect.challenge");
         this.ws = ws;
         this.setupListeners(ws);
-        this.authenticate()
-          .then(() => {
-            this._isConnected = true;
-            log.info("Gateway 认证成功");
-            resolve();
-          })
-          .catch((err) => {
-            this.ws = null;
-            ws.close();
-            reject(err);
-          });
+        // 认证由 handleFrame 中收到 connect.challenge 后触发
+        this.connectResolve = resolve;
+        this.connectReject = reject;
       });
 
       ws.on("error", (err) => {
@@ -149,36 +145,67 @@ export class OpenClawBackendClient {
       waiter.reject(new Error("连接已断开"));
     }
     this.chatWaiters.clear();
+
+    // 清理 connect 生命周期回调
+    if (this.connectReject) {
+      this.connectReject(new Error("连接已断开"));
+      this.connectReject = null;
+      this.connectResolve = null;
+    }
   }
 
   // ─── 认证 ─────────────────────────────────────────────────────────────────
 
-  private authenticate(): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      const reqId = randomUUID();
-      const timer = setTimeout(() => {
-        this.pendingRequests.delete(reqId);
-        reject(new Error("认证超时"));
-      }, 10000);
+  /**
+   * 发送符合 Gateway 协议的 connect 请求。
+   * 由 handleFrame 在收到 connect.challenge 后调用。
+   */
+  private sendConnectRequest(): void {
+    const reqId = randomUUID();
+    const timer = setTimeout(() => {
+      this.pendingRequests.delete(reqId);
+      this.connectReject?.(new Error("认证超时"));
+      this.connectReject = null;
+      this.connectResolve = null;
+    }, 10000);
 
-      this.pendingRequests.set(reqId, {
-        resolve: () => {
-          clearTimeout(timer);
-          resolve();
-        },
-        reject: (err) => {
-          clearTimeout(timer);
-          reject(err);
-        },
-        timer,
-      });
+    this.pendingRequests.set(reqId, {
+      resolve: () => {
+        clearTimeout(timer);
+        this._isConnected = true;
+        log.info("Gateway 认证成功");
+        this.connectResolve?.();
+        this.connectResolve = null;
+        this.connectReject = null;
+      },
+      reject: (err) => {
+        clearTimeout(timer);
+        this.connectReject?.(err);
+        this.connectReject = null;
+        this.connectResolve = null;
+      },
+      timer,
+    });
 
-      this.sendRaw({
-        type: "req",
-        id: reqId,
-        method: "connect",
-        params: { token: this.config.token },
-      });
+    this.sendRaw({
+      type: "req",
+      id: reqId,
+      method: "connect",
+      params: {
+        minProtocol: 3,
+        maxProtocol: 3,
+        client: {
+          id: "nexqa-backend",
+          version: "1.0.0",
+          platform: process.platform,
+          mode: "backend",
+        },
+        auth: {
+          token: this.config.token,
+        },
+        role: "operator",
+        scopes: ["operator.admin"],
+      },
     });
   }
 
@@ -343,9 +370,10 @@ export class OpenClawBackendClient {
       // tick 心跳 - 忽略
       if (event === "tick") return;
 
-      // connect.challenge - 不应在 shared-secret 模式下收到
+      // connect.challenge - Gateway 协议要求收到后再发 connect
       if (event === "connect.challenge") {
-        log.warn("收到 connect.challenge，shared-secret 模式不应收到此事件");
+        log.info("收到 connect.challenge，发送 connect 请求");
+        this.sendConnectRequest();
         return;
       }
 
