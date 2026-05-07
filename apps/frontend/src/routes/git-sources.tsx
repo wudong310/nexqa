@@ -114,13 +114,6 @@ const SCAN_STATUS_CONFIG: Record<
     icon: <Clock className="h-3 w-3" />,
     animate: true,
   },
-  cloning: {
-    label: "克隆中",
-    color:
-      "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
-    icon: <Loader2 className="h-3 w-3 animate-spin" />,
-    animate: true,
-  },
   analyzing: {
     label: "分析中",
     color:

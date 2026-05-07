@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const ScanStatusSchema = z.enum([
-  "pending", "cloning", "analyzing", "importing", "completed", "failed",
+  "pending", "analyzing", "importing", "completed", "failed",
 ]);
 export type ScanStatus = z.infer<typeof ScanStatusSchema>;
 

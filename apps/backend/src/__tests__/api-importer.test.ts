@@ -67,6 +67,7 @@ function makeEndpoint(overrides: Partial<Endpoint> = {}): Endpoint {
     queryParams: [],
     pathParams: [],
     responses: [{ status: 200, description: "OK" }],
+    confidence: "high",
     ...overrides,
   };
 }
