@@ -592,8 +592,8 @@ function sourceToFormData(source: GitSource): GitSourceFormData {
     branch: source.branch,
     authType: source.auth.type === "token" ? "token" : "none",
     authToken: "", // Never pre-fill token for security
-    framework: source.scanConfig.framework,
-    includePaths: source.scanConfig.includePaths.join(", "),
+    framework: source.scanConfig?.framework ?? "auto",
+    includePaths: (source.scanConfig?.includePaths ?? []).join(", "),
     openclawConnectionId: source.openclawConnectionId,
   };
 }
@@ -1035,7 +1035,7 @@ function GitSourceCard({
                 上次扫描：{formatDate(source.lastScanAt)}
               </span>
             )}
-            {source.scanConfig.framework !== "auto" && (
+            {source.scanConfig?.framework && source.scanConfig.framework !== "auto" && (
               <Badge variant="outline" className="text-[10px]">
                 {source.scanConfig.framework}
               </Badge>
@@ -1094,7 +1094,7 @@ function GitSourceCard({
                   <div>
                     <p className="text-xs text-muted-foreground">框架</p>
                     <p className="font-medium">
-                      {source.scanConfig.framework}
+                      {source.scanConfig?.framework ?? "auto"}
                     </p>
                   </div>
                 </div>
@@ -1103,7 +1103,7 @@ function GitSourceCard({
                     扫描路径
                   </p>
                   <div className="flex flex-wrap gap-1">
-                    {source.scanConfig.includePaths.map((p) => (
+                    {(source.scanConfig?.includePaths ?? []).map((p) => (
                       <Badge
                         key={p}
                         variant="outline"
@@ -1119,7 +1119,7 @@ function GitSourceCard({
                     排除路径
                   </p>
                   <div className="flex flex-wrap gap-1">
-                    {source.scanConfig.excludePaths.map((p) => (
+                    {(source.scanConfig?.excludePaths ?? []).map((p) => (
                       <Badge
                         key={p}
                         variant="outline"
