@@ -32,6 +32,7 @@ import { projectEnvironmentRoutes } from "./routes/project-environments.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { gitSourceRoutes } from "./routes/git-sources.js";
 import { scanRoutes } from "./routes/scan.js";
+import { planGenV2ProjectRoutes, planGenV2PollRoutes } from "./routes/plan-gen-v2.js";
 
 type Env = { Variables: { traceId: string } };
 
@@ -78,6 +79,8 @@ app.route("/nexqa/api/projects", projectEnvironmentRoutes);
 app.route("/nexqa/api/security-scan", securityScanRoutes);
 app.route("/nexqa/api/git-sources", gitSourceRoutes);
 app.route("/nexqa/api", scanRoutes);
+app.route("/nexqa/api/projects", planGenV2ProjectRoutes);
+app.route("/nexqa/api", planGenV2PollRoutes);
 
 // ── Global error handler ──────────────────────────────
 app.onError((err, c) => {
