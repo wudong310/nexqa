@@ -10,13 +10,23 @@
 
 import { randomUUID } from "node:crypto";
 import type {
+  ApiEndpoint,
   PlanGenerationV2,
   PlanGenV2Result,
   PlanGenV2Status,
+  Project,
+  ScanRecord,
 } from "@nexqa/shared";
 import { PlanGenV2ResultSchema } from "@nexqa/shared";
+import {
+  buildPlanGenV2Prompt,
+  type PlanGenV2ApiChanges,
+  type PlanGenV2Endpoint,
+  type PlanGenV2ProjectContext,
+} from "../prompts/plan-gen-v2.js";
 import { createLogger } from "./logger.js";
 import type { OpenClawBackendClient } from "./openclaw-client.js";
+import { storage } from "./storage.js";
 
 // Re-export types for consumers
 export type { PlanGenerationV2, PlanGenV2Result, PlanGenV2Status };
@@ -116,9 +126,11 @@ export class TestPlanGenV2Service {
    * 内部：执行方案生成
    *
    * 1. 更新状态为 generating
-   * 2. 调用 openclaw-client.sendAndWait 发送 prompt
-   * 3. 解析返回的 JSON 结果
-   * 4. Zod 校验 + 状态更新
+   * 2. 查询项目上下文、API 端点、变更数据
+   * 3. 根据 scope 条件（changedOnly / endpointIds）过滤端点并注入变更
+   * 4. 调用 buildPlanGenV2Prompt 构建结构化 prompt
+   * 5. 调用 openclaw-client.sendAndWait 发送 prompt
+   * 6. 解析返回的 JSON 结果 + Zod 校验 + 状态更新
    */
   private async executeGeneration(id: string): Promise<void> {
     const gen = this.generations.get(id);
@@ -132,10 +144,77 @@ export class TestPlanGenV2Service {
     this.log.info(`开始生成: id=${id}, intent="${gen.intent}"`);
 
     try {
-      // 构建 prompt
-      const prompt = this.buildPrompt(gen);
+      // ── 1. 查询项目上下文 ────────────────────────────────────────
+      const project = await storage.read<Project>("projects", gen.projectId);
+      if (!project) {
+        throw new Error(`项目不存在: ${gen.projectId}`);
+      }
 
-      // 调用 OpenClaw Agent
+      // ── 2. 查询该项目下所有 API 端点 ────────────────────────────
+      const allEndpoints = await storage.list<ApiEndpoint>("api-endpoints");
+      const projectEndpoints = allEndpoints.filter(
+        (ep) => ep.projectId === gen.projectId,
+      );
+
+      // ── 3. 查询该项目下现有用例总数（用于项目上下文） ────────────
+      const allCases = await storage.list<{ id: string; projectId: string }>("test-cases");
+      const totalCases = allCases.filter((tc) => tc.projectId === gen.projectId).length;
+
+      // ── 4. 根据 scope 条件构建端点列表和变更数据 ────────────────
+      let endpointList: PlanGenV2Endpoint[];
+      let apiChanges: PlanGenV2ApiChanges | undefined;
+
+      if (gen.scope?.changedOnly && gen.scope.gitSourceIds?.length) {
+        // changedOnly 模式：查询最新扫描变更，注入 apiChanges
+        const changesResult = await this.getLatestChanges(gen.scope.gitSourceIds);
+        apiChanges = changesResult.apiChanges;
+        endpointList = changesResult.affectedEndpoints.length > 0
+          ? this.toPromptEndpoints(changesResult.affectedEndpoints)
+          : this.toPromptEndpoints(projectEndpoints); // 无变更时降级为全量
+
+        if (apiChanges && (apiChanges.added.length + apiChanges.updated.length + apiChanges.removed.length) > 0) {
+          this.log.info(
+            `变更注入: added=${apiChanges.added.length} updated=${apiChanges.updated.length} removed=${apiChanges.removed.length}`,
+          );
+        } else {
+          this.log.info("changedOnly 模式但无变更数据，降级为全量端点分析");
+          apiChanges = undefined;
+        }
+      } else if (gen.scope?.endpointIds?.length) {
+        // 指定端点模式：仅传递指定端点
+        const specifiedIds = new Set(gen.scope.endpointIds);
+        const filtered = projectEndpoints.filter((ep) => specifiedIds.has(ep.id));
+        endpointList = filtered.length > 0
+          ? this.toPromptEndpoints(filtered)
+          : this.toPromptEndpoints(projectEndpoints); // 指定的端点未找到时降级为全量
+
+        if (filtered.length > 0) {
+          this.log.info(`指定端点过滤: ${filtered.length}/${gen.scope.endpointIds.length} 命中`);
+        } else {
+          this.log.info("指定端点均未找到，降级为全量端点分析");
+        }
+      } else {
+        // 默认：全量端点分析
+        endpointList = this.toPromptEndpoints(projectEndpoints);
+        this.log.info(`全量端点分析: ${endpointList.length} 个端点`);
+      }
+
+      // ── 5. 构建项目上下文 ───────────────────────────────────────
+      const projectContext: PlanGenV2ProjectContext = {
+        name: project.name,
+        totalCases,
+        tagDistribution: "（自动分析）", // TODO: 后续从用例标签统计生成
+      };
+
+      // ── 6. 使用 prompt 模板构建结构化 prompt ────────────────────
+      const prompt = buildPlanGenV2Prompt({
+        projectContext,
+        endpointList,
+        apiChanges,
+        userIntent: gen.intent,
+      });
+
+      // ── 7. 调用 OpenClaw Agent ─────────────────────────────────
       const rawResponse = await this.openclawClient.sendAndWait(prompt, {
         timeout: TIMEOUTS.planGeneration,
       });
@@ -162,76 +241,89 @@ export class TestPlanGenV2Service {
     }
   }
 
-  /**
-   * 构建发送给 OpenClaw Agent 的 prompt
-   */
-  private buildPrompt(gen: PlanGenerationV2): string {
-    const scopeSection = gen.scope
-      ? this.buildScopeSection(gen.scope)
-      : "范围: 全量";
+  // ── 变更数据查询 ─────────────────────────────────────────────────────────
 
-    return [
-      "你是一个测试架构师。请根据以下信息生成最优测试方案。",
-      "",
-      "## 项目信息",
-      `- 项目 ID: ${gen.projectId}`,
-      `- ${scopeSection}`,
-      "",
-      "## 用户意图",
-      gen.intent,
-      "",
-      "## 输出要求",
-      "请严格按以下 JSON 格式输出：",
-      "```json",
-      "{",
-      '  "parsedIntent": {',
-      '    "type": "release|smoke|regression|security|full|module|quick|custom",',
-      '    "scope": "all|changed|specific",',
-      '    "urgency": "normal|quick"',
-      "  },",
-      '  "plan": {',
-      '    "name": "方案名称",',
-      '    "description": "方案描述",',
-      '    "stages": [',
-      "      {",
-      '        "name": "阶段名",',
-      '        "order": 1,',
-      '        "selection": { "tags": {...}, "endpointIds": [...] },',
-      '        "criteria": { "minPassRate": 0.95, "maxP0Fails": 0, "maxP1Fails": 3 },',
-      '        "gate": true',
-      "      }",
-      "    ],",
-      '    "execution": {',
-      '      "concurrency": 3,',
-      '      "retryOnFail": 1,',
-      '      "timeoutMs": 30000,',
-      '      "stopOnGateFail": true',
-      "    },",
-      '    "criteria": { "minPassRate": 0.95, "maxP0Fails": 0, "maxP1Fails": 3 },',
-      '    "reasoning": "分析推理过程..."',
-      "  }",
-      "}",
-      "```",
-    ].join("\n");
+  /**
+   * 查询 gitSourceIds 关联的最新扫描变更
+   *
+   * 逻辑：
+   * 1. 获取所有 ScanRecord，按 gitSourceId 筛选
+   * 2. 取每个 gitSourceId 最新的 completed 记录
+   * 3. 汇总 diff 结果（added/updated/removed）转为 PlanGenV2ApiChanges
+   * 4. 收集受影响的端点用于过滤
+   */
+  private async getLatestChanges(gitSourceIds: string[]): Promise<{
+    apiChanges: PlanGenV2ApiChanges;
+    affectedEndpoints: ApiEndpoint[];
+  }> {
+    const allScanRecords = await storage.list<ScanRecord>("scan-records");
+    const sourceIdSet = new Set(gitSourceIds);
+
+    // 按 gitSourceId 分组，取最新 completed 的记录
+    const latestBySource = new Map<string, ScanRecord>();
+    for (const record of allScanRecords) {
+      if (!sourceIdSet.has(record.gitSourceId)) continue;
+      if (record.status !== "completed") continue;
+      if (!record.completedAt) continue;
+
+      const existing = latestBySource.get(record.gitSourceId);
+      if (!existing || record.completedAt > (existing.completedAt ?? "")) {
+        latestBySource.set(record.gitSourceId, record);
+      }
+    }
+
+    // 汇总变更
+    const added: string[] = [];
+    const updated: string[] = [];
+    const removed: string[] = [];
+    const affectedEndpointIds = new Set<string>();
+
+    for (const record of latestBySource.values()) {
+      if (!record.result?.changes) continue;
+
+      for (const change of record.result.changes) {
+        const label = `${change.method} ${change.path}`;
+        switch (change.type) {
+          case "added":
+            added.push(label);
+            break;
+          case "updated":
+            updated.push(label);
+            break;
+          case "removed":
+            removed.push(label);
+            break;
+        }
+        if (change.endpointId) {
+          affectedEndpointIds.add(change.endpointId);
+        }
+      }
+    }
+
+    // 查询受影响的端点详情
+    let affectedEndpoints: ApiEndpoint[] = [];
+    if (affectedEndpointIds.size > 0) {
+      const allEndpoints = await storage.list<ApiEndpoint>("api-endpoints");
+      affectedEndpoints = allEndpoints.filter((ep) => affectedEndpointIds.has(ep.id));
+    }
+
+    return {
+      apiChanges: { added, updated, removed },
+      affectedEndpoints,
+    };
   }
 
+  // ── 端点转换 ────────────────────────────────────────────────────────────
+
   /**
-   * 构建范围描述
+   * 将 ApiEndpoint[] 转换为 prompt 模板需要的 PlanGenV2Endpoint[] 格式
    */
-  private buildScopeSection(
-    scope: NonNullable<PlanGenerationV2["scope"]>,
-  ): string {
-    const parts: string[] = [];
-    if (scope.gitSourceIds?.length) {
-      parts.push(`Git 来源: ${scope.gitSourceIds.join(", ")}`);
-    }
-    if (scope.endpointIds?.length) {
-      parts.push(`限定端点: ${scope.endpointIds.length} 个`);
-    }
-    if (scope.changedOnly) {
-      parts.push("仅覆盖变更端点");
-    }
-    return parts.length > 0 ? `范围: ${parts.join(" | ")}` : "范围: 全量";
+  private toPromptEndpoints(endpoints: ApiEndpoint[]): PlanGenV2Endpoint[] {
+    return endpoints.map((ep) => ({
+      method: ep.method,
+      path: ep.path,
+      summary: ep.summary || "",
+    }));
   }
 
   /**
