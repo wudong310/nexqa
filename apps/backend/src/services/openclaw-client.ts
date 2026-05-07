@@ -195,7 +195,7 @@ export class OpenClawBackendClient {
         minProtocol: 3,
         maxProtocol: 3,
         client: {
-          id: "nexqa-backend",
+          id: "gateway-client",
           version: "1.0.0",
           platform: process.platform,
           mode: "backend",
