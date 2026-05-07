@@ -1,3 +1,13 @@
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,8 +16,23 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { MethodBadge } from "@/components/ui/method-badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Sheet,
   SheetContent,
@@ -20,6 +45,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/lib/api";
 import type {
   GitSource,
+  OpenClawConnection,
+  Project,
   ScanChange,
   ScanRecord,
   ScanStatus,
@@ -36,9 +63,12 @@ import {
   History,
   Loader2,
   Minus,
+  MoreVertical,
+  Pencil,
   Plus,
   RefreshCw,
   Scan,
+  Trash2,
   XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -529,9 +559,375 @@ function useScanPolling(scanRecordId: string | null, onComplete: () => void) {
   return cleanup;
 }
 
+// ── Git Source Form Sheet ────────────────────────────
+
+interface GitSourceFormData {
+  name: string;
+  repoUrl: string;
+  branch: string;
+  authType: "none" | "token";
+  authToken: string;
+  framework: "auto" | "hono" | "express" | "spring-boot" | "fastapi";
+  includePaths: string;
+  openclawConnectionId: string;
+}
+
+function emptyFormData(): GitSourceFormData {
+  return {
+    name: "",
+    repoUrl: "",
+    branch: "main",
+    authType: "none",
+    authToken: "",
+    framework: "auto",
+    includePaths: "src/**",
+    openclawConnectionId: "",
+  };
+}
+
+function sourceToFormData(source: GitSource): GitSourceFormData {
+  return {
+    name: source.name,
+    repoUrl: source.repoUrl,
+    branch: source.branch,
+    authType: source.auth.type === "token" ? "token" : "none",
+    authToken: "", // Never pre-fill token for security
+    framework: source.scanConfig.framework,
+    includePaths: source.scanConfig.includePaths.join(", "),
+    openclawConnectionId: source.openclawConnectionId,
+  };
+}
+
+function GitSourceFormSheet({
+  open,
+  onOpenChange,
+  editSource,
+  projectId,
+  connections,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  editSource: GitSource | null;
+  projectId: string;
+  connections: OpenClawConnection[];
+}) {
+  const queryClient = useQueryClient();
+  const [form, setForm] = useState<GitSourceFormData>(emptyFormData());
+
+  useEffect(() => {
+    if (open) {
+      setForm(editSource ? sourceToFormData(editSource) : emptyFormData());
+    }
+  }, [open, editSource]);
+
+  const createMutation = useMutation({
+    mutationFn: (data: GitSourceFormData) =>
+      api.post<GitSource>("/git-sources", {
+        projectId,
+        name: data.name,
+        repoUrl: data.repoUrl,
+        branch: data.branch,
+        auth: {
+          type: data.authType,
+          ...(data.authType === "token" && data.authToken
+            ? { token: data.authToken }
+            : {}),
+        },
+        scanConfig: {
+          framework: data.framework,
+          includePaths: data.includePaths
+            .split(",")
+            .map((p) => p.trim())
+            .filter(Boolean),
+        },
+        openclawConnectionId: data.openclawConnectionId,
+      }),
+    onSuccess: () => {
+      toast.success("Git Source 已创建");
+      queryClient.invalidateQueries({ queryKey: ["git-sources"] });
+      onOpenChange(false);
+    },
+    onError: (err) => {
+      toast.error("创建失败", { description: (err as Error).message });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (data: GitSourceFormData) =>
+      api.put<GitSource>(`/git-sources/${editSource!.id}`, {
+        name: data.name,
+        repoUrl: data.repoUrl,
+        branch: data.branch,
+        auth: {
+          type: data.authType,
+          ...(data.authType === "token" && data.authToken
+            ? { token: data.authToken }
+            : {}),
+        },
+        scanConfig: {
+          framework: data.framework,
+          includePaths: data.includePaths
+            .split(",")
+            .map((p) => p.trim())
+            .filter(Boolean),
+        },
+        openclawConnectionId: data.openclawConnectionId,
+      }),
+    onSuccess: () => {
+      toast.success("Git Source 已更新");
+      queryClient.invalidateQueries({ queryKey: ["git-sources"] });
+      onOpenChange(false);
+    },
+    onError: (err) => {
+      toast.error("更新失败", { description: (err as Error).message });
+    },
+  });
+
+  const isPending = createMutation.isPending || updateMutation.isPending;
+  const isEditing = editSource !== null;
+
+  const canSubmit =
+    form.name.trim() !== "" &&
+    form.repoUrl.trim() !== "" &&
+    form.openclawConnectionId !== "";
+
+  function handleSubmit() {
+    if (!canSubmit) return;
+    if (isEditing) {
+      updateMutation.mutate(form);
+    } else {
+      createMutation.mutate(form);
+    }
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="overflow-y-auto">
+        <SheetHeader>
+          <SheetTitle>
+            {isEditing ? "编辑 Git Source" : "添加 Git Source"}
+          </SheetTitle>
+          <SheetDescription>
+            {isEditing
+              ? "修改 Git 仓库源配置"
+              : "添加一个 Git 仓库源，自动扫描代码中的 API 端点"}
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="space-y-4 p-4">
+          <div className="space-y-2">
+            <Label htmlFor="gs-name">名称 *</Label>
+            <Input
+              id="gs-name"
+              placeholder="My API Project"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="gs-repo">仓库地址 *</Label>
+            <Input
+              id="gs-repo"
+              placeholder="https://github.com/user/repo.git"
+              value={form.repoUrl}
+              onChange={(e) => setForm({ ...form, repoUrl: e.target.value })}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="gs-branch">分支</Label>
+            <Input
+              id="gs-branch"
+              placeholder="main"
+              value={form.branch}
+              onChange={(e) => setForm({ ...form, branch: e.target.value })}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>认证方式</Label>
+            <Select
+              value={form.authType}
+              onValueChange={(v) =>
+                setForm({ ...form, authType: v as "none" | "token" })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">无认证</SelectItem>
+                <SelectItem value="token">Token</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {form.authType === "token" && (
+            <div className="space-y-2">
+              <Label htmlFor="gs-token">Token</Label>
+              <Input
+                id="gs-token"
+                type="password"
+                placeholder={isEditing ? "留空保留原 Token" : "输入访问令牌"}
+                value={form.authToken}
+                onChange={(e) =>
+                  setForm({ ...form, authToken: e.target.value })
+                }
+              />
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label>框架</Label>
+            <Select
+              value={form.framework}
+              onValueChange={(v) =>
+                setForm({
+                  ...form,
+                  framework: v as GitSourceFormData["framework"],
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">自动检测</SelectItem>
+                <SelectItem value="hono">Hono</SelectItem>
+                <SelectItem value="express">Express</SelectItem>
+                <SelectItem value="spring-boot">Spring Boot</SelectItem>
+                <SelectItem value="fastapi">FastAPI</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="gs-paths">扫描路径（逗号分隔）</Label>
+            <Input
+              id="gs-paths"
+              placeholder="src/**"
+              value={form.includePaths}
+              onChange={(e) =>
+                setForm({ ...form, includePaths: e.target.value })
+              }
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>OpenClaw 连接 *</Label>
+            <Select
+              value={form.openclawConnectionId}
+              onValueChange={(v) =>
+                setForm({ ...form, openclawConnectionId: v })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="选择 OpenClaw 连接" />
+              </SelectTrigger>
+              <SelectContent>
+                {connections.map((conn) => (
+                  <SelectItem key={conn.id} value={conn.id}>
+                    {conn.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {connections.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                暂无可用连接，请先在 OpenClaw 页面添加连接
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 px-4 pb-4">
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={isPending}
+          >
+            取消
+          </Button>
+          <Button onClick={handleSubmit} disabled={!canSubmit || isPending}>
+            {isPending && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
+            {isEditing ? "保存" : "创建"}
+          </Button>
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+// ── Delete Confirm Dialog ───────────────────────────
+
+function DeleteGitSourceDialog({
+  source,
+  open,
+  onOpenChange,
+}: {
+  source: GitSource | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const queryClient = useQueryClient();
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/git-sources/${id}`),
+    onSuccess: () => {
+      toast.success("Git Source 已删除");
+      queryClient.invalidateQueries({ queryKey: ["git-sources"] });
+      onOpenChange(false);
+    },
+    onError: (err) => {
+      toast.error("删除失败", { description: (err as Error).message });
+    },
+  });
+
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>删除 Git Source</AlertDialogTitle>
+          <AlertDialogDescription>
+            确定要删除 &quot;{source?.name}&quot;
+            吗？关联的扫描记录不会被删除，但此操作无法撤销。
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={deleteMutation.isPending}>
+            取消
+          </AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            onClick={(e) => {
+              e.preventDefault();
+              if (source) deleteMutation.mutate(source.id);
+            }}
+            disabled={deleteMutation.isPending}
+          >
+            {deleteMutation.isPending && (
+              <Loader2 className="h-4 w-4 animate-spin mr-1" />
+            )}
+            删除
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 // ── Git Source Card ─────────────────────────────────
 
-function GitSourceCard({ source }: { source: GitSource }) {
+function GitSourceCard({
+  source,
+  onEdit,
+  onDelete,
+}: {
+  source: GitSource;
+  onEdit: (source: GitSource) => void;
+  onDelete: (source: GitSource) => void;
+}) {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("info");
   const [pollingScanId, setPollingScanId] = useState<string | null>(null);
@@ -606,6 +1002,26 @@ function GitSourceCard({ source }: { source: GitSource }) {
                 )}
                 {isScanning ? "扫描中..." : "扫描"}
               </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => onEdit(source)}>
+                    <Pencil className="h-3.5 w-3.5 mr-2" />
+                    编辑
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => onDelete(source)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 mr-2" />
+                    删除
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
         </CardHeader>
@@ -770,12 +1186,45 @@ export function GitSourcesPage() {
     queryFn: () => api.get(`/git-sources?projectId=${projectId}`),
   });
 
+  const { data: project } = useQuery<Project>({
+    queryKey: ["project", projectId],
+    queryFn: () => api.get(`/projects/detail?id=${projectId}`),
+  });
+
+  const connections = project?.openclawConnections ?? [];
   const sources = data?.items ?? [];
+
+  // Form sheet state
+  const [formOpen, setFormOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<GitSource | null>(null);
+
+  // Delete dialog state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<GitSource | null>(null);
+
+  function handleCreate() {
+    setEditTarget(null);
+    setFormOpen(true);
+  }
+
+  function handleEdit(source: GitSource) {
+    setEditTarget(source);
+    setFormOpen(true);
+  }
+
+  function handleDelete(source: GitSource) {
+    setDeleteTarget(source);
+    setDeleteDialogOpen(true);
+  }
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold">Git Sources</h1>
+        <Button onClick={handleCreate} className="gap-1.5">
+          <Plus className="h-4 w-4" />
+          添加 Git Source
+        </Button>
       </div>
 
       {isLoading ? (
@@ -795,14 +1244,39 @@ export function GitSourcesPage() {
           icon={<GitBranch className="h-12 w-12" />}
           title="还没有配置 Git Source"
           description="添加一个 Git 仓库源，自动扫描代码中的 API 端点"
+          action={
+            <Button onClick={handleCreate} className="gap-1.5">
+              <Plus className="h-4 w-4" />
+              添加 Git Source
+            </Button>
+          }
         />
       ) : (
         <div className="space-y-3">
           {sources.map((source) => (
-            <GitSourceCard key={source.id} source={source} />
+            <GitSourceCard
+              key={source.id}
+              source={source}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+            />
           ))}
         </div>
       )}
+
+      <GitSourceFormSheet
+        open={formOpen}
+        onOpenChange={setFormOpen}
+        editSource={editTarget}
+        projectId={projectId}
+        connections={connections}
+      />
+
+      <DeleteGitSourceDialog
+        source={deleteTarget}
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+      />
     </div>
   );
 }
