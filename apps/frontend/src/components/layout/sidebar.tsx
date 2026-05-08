@@ -111,7 +111,9 @@ export function Sidebar() {
     if (to.endsWith("/settings") && to.includes("$projectId")) {
       return location.pathname === resolved;
     }
-    return location.pathname.startsWith(resolved);
+    // 精确前缀匹配：路径必须完全等于 resolved 或以 resolved + "/" 开头
+    // 避免 /api 匹配到 /api-management
+    return location.pathname === resolved || location.pathname.startsWith(resolved + "/");
   }
 
   const isGlobalSettingsActive = location.pathname === "/settings";
