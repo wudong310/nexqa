@@ -1,6 +1,7 @@
 import type { ApiEndpoint, Endpoint } from "@nexqa/shared";
 import { Hono } from "hono";
 import { v4 as uuid } from "uuid";
+import { extractModule } from "../services/api-importer.js";
 import { parseApiDocument } from "../services/api-parser.js";
 import { createLogger } from "../services/logger.js";
 import { storage } from "../services/storage.js";
@@ -8,15 +9,42 @@ import { storage } from "../services/storage.js";
 const COLLECTION = "api-endpoints";
 
 export const apiEndpointRoutes = new Hono()
+  .get("/modules", async (c) => {
+    const projectId = c.req.query("projectId");
+    const gitSourceId = c.req.query("gitSourceId");
+    if (!projectId) return c.json({ error: "projectId is required" }, 400);
+    const all = await storage.list<ApiEndpoint>(COLLECTION);
+    let filtered = all.filter((ep) => ep.projectId === projectId);
+    if (gitSourceId) {
+      filtered = filtered.filter((ep) => ep.gitSourceId === gitSourceId);
+    }
+    const moduleMap = new Map<string, number>();
+    for (const ep of filtered) {
+      const mod = ep.module || "uncategorized";
+      moduleMap.set(mod, (moduleMap.get(mod) || 0) + 1);
+    }
+    const modules = Array.from(moduleMap.entries())
+      .map(([module, count]) => ({ module, count }))
+      .sort((a, b) => b.count - a.count);
+    return c.json(modules);
+  })
   .get("/", async (c) => {
     const projectId = c.req.query("projectId");
     const documentId = c.req.query("documentId");
+    const gitSourceId = c.req.query("gitSourceId");
+    const module = c.req.query("module");
     const all = await storage.list<ApiEndpoint>(COLLECTION);
     let filtered = projectId
       ? all.filter((ep) => ep.projectId === projectId)
       : all;
     if (documentId) {
       filtered = filtered.filter((ep) => ep.documentId === documentId);
+    }
+    if (gitSourceId) {
+      filtered = filtered.filter((ep) => ep.gitSourceId === gitSourceId);
+    }
+    if (module) {
+      filtered = filtered.filter((ep) => (ep.module || "uncategorized") === module);
     }
     filtered.sort((a, b) => {
       const cmp = a.path.localeCompare(b.path);
@@ -84,6 +112,7 @@ export const apiEndpointRoutes = new Hono()
           sourceType: "manual",
           gitSourceId: null,
           lastScanId: null,
+          module: extractModule(ep.path),
           createdAt: now,
           updatedAt: now,
         };

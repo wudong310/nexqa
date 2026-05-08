@@ -22,6 +22,16 @@ import { storage } from "./storage.js";
 const EP_COLLECTION = "api-endpoints";
 const TC_COLLECTION = "test-cases";
 
+/**
+ * 从 API 路径中提取业务模块名。
+ * 去掉公共前缀后取第一段路径作为模块名。
+ */
+export function extractModule(path: string): string {
+  const stripped = path.replace(/^\/(?:console\/api|nexqa\/api|api)\//, '');
+  const firstSegment = stripped.split('/')[0];
+  return firstSegment && !firstSegment.startsWith(':') ? firstSegment : 'uncategorized';
+}
+
 // ── Public Types ──────────────────────────────────────
 
 export interface ImportResult {
@@ -235,6 +245,7 @@ export async function importEndpoints(
         sourceType: "git-scan",
         gitSourceId,
         lastScanId: scanId,
+        module: extractModule(incoming.path),
         createdAt: now,
         updatedAt: now,
       };

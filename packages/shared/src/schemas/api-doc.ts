@@ -56,6 +56,7 @@ export const ApiEndpointSchema = z.object({
   sourceType: z.enum(["manual", "document", "git-scan"]).default("manual"),
   gitSourceId: z.string().uuid().nullable().default(null),
   lastScanId: z.string().uuid().nullable().default(null),
+  module: z.string().default("uncategorized"),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });

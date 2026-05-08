@@ -26,6 +26,7 @@ function makeEndpoint(
     sourceType: "manual",
     gitSourceId: null,
     lastScanId: null,
+    module: overrides.module || "uncategorized",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };

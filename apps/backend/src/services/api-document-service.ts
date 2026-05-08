@@ -5,6 +5,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { ApiDocument, ApiEndpoint, Endpoint, TestCase } from "@nexqa/shared";
 import type { ApiFormat } from "./api-parser.js";
+import { extractModule } from "./api-importer.js";
 import { parseApiDocument } from "./api-parser.js";
 import { storage } from "./storage.js";
 
@@ -237,6 +238,7 @@ export async function confirmUpdate(
         sourceType: "document",
         gitSourceId: null,
         lastScanId: null,
+        module: extractModule(ep.path),
         createdAt: now,
         updatedAt: now,
       };
@@ -380,6 +382,7 @@ async function createEndpoints(
       sourceType: "document",
       gitSourceId: null,
       lastScanId: null,
+      module: extractModule(ep.path),
       createdAt: now,
       updatedAt: now,
     };
