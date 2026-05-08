@@ -403,6 +403,16 @@ export class OpenClawBackendClient {
     if (state === "final") {
       const text =
         this.extractText(payload.message) || waiter.deltaBuffer;
+      // 如果 text 为空且消息只包含 tool_use/tool_call，说明是中间 turn
+      // agent 还在执行 tool calls，真正的最终回复尚未产生，跳过不 resolve
+      if (!text && this.isToolOnlyTurn(payload.message)) {
+        log.debug(
+          "跳过中间 tool-only turn 的 final 事件，继续等待最终回复",
+        );
+        // 重置 deltaBuffer，因为下一个 turn 会产生新的 delta
+        waiter.deltaBuffer = "";
+        return;
+      }
       // 从 map 中移除
       this.removeWaiter(waiter);
       waiter.resolve(text);
@@ -468,6 +478,21 @@ export class OpenClawBackendClient {
     if (typeof m.text === "string") return m.text;
     if (typeof m.content === "string") return m.content;
     return "";
+  }
+
+  /**
+   * 判断消息是否只包含 tool_use/tool_call 内容块（无文本输出）。
+   * 用于识别 agent 多步 tool call 场景中的中间 turn。
+   */
+  private isToolOnlyTurn(message: unknown): boolean {
+    if (!message || typeof message !== "object") return false;
+    const m = message as Record<string, unknown>;
+    if (!Array.isArray(m.content)) return false;
+    const content = m.content as Array<Record<string, unknown>>;
+    if (content.length === 0) return false;
+    return content.every(
+      (c) => c.type === "tool_use" || c.type === "tool_call",
+    );
   }
 
   // ─── 发送工具 ──────────────────────────────────────────────────────────────

@@ -30,8 +30,19 @@ class MockWebSocket extends EventEmitter {
   constructor(_url: string) {
     super();
     wsInstances.push(this);
-    // Fire 'open' asynchronously
-    queueMicrotask(() => this.emit("open"));
+    // Fire 'open' asynchronously, then emit connect.challenge
+    queueMicrotask(() => {
+      this.emit("open");
+      // Gateway protocol: server sends connect.challenge after open
+      queueMicrotask(() => {
+        const challengeFrame = JSON.stringify({
+          type: "event",
+          event: "connect.challenge",
+          payload: { nonce: "test-nonce" },
+        });
+        this.emit("message", challengeFrame);
+      });
+    });
   }
 
   send(data: string) {
@@ -139,7 +150,7 @@ describe("OpenClawBackendClient", () => {
       const authMsg = JSON.parse(ws.sentMessages[0]);
       expect(authMsg.type).toBe("req");
       expect(authMsg.method).toBe("connect");
-      expect(authMsg.params.token).toBe("test-token-123");
+      expect(authMsg.params.auth.token).toBe("test-token-123");
 
       // Simulate auth success
       simulateAuthSuccess(ws);
@@ -496,6 +507,210 @@ describe("OpenClawBackendClient", () => {
       ws.emit("close", 1006, Buffer.from("gone"));
 
       await expect(connectPromise).rejects.toThrow();
+    });
+  });
+
+  describe("multi-step tool call (skip intermediate final)", () => {
+    it("should skip final event when message is tool-only and wait for real reply", async () => {
+      const { client, ws } = await createConnectedClient();
+
+      const sendPromise = client.sendAndWait("scan this repo");
+      await new Promise((r) => setTimeout(r, 10));
+
+      const chatMsg = JSON.parse(ws.sentMessages[ws.sentMessages.length - 1]);
+      const ik = chatMsg.params.idempotencyKey;
+
+      // Ack
+      ws.emit(
+        "message",
+        JSON.stringify({
+          type: "res",
+          id: chatMsg.id,
+          ok: true,
+          payload: {},
+        }),
+      );
+      await new Promise((r) => setTimeout(r, 10));
+
+      // First final: tool-only turn (agent calls a tool, no text)
+      ws.emit(
+        "message",
+        JSON.stringify({
+          type: "event",
+          event: "chat",
+          payload: {
+            state: "final",
+            idempotencyKey: ik,
+            message: {
+              content: [
+                { type: "tool_use", id: "tool_1", name: "exec", input: { command: "git clone ..." } },
+              ],
+            },
+          },
+        }),
+      );
+      await new Promise((r) => setTimeout(r, 10));
+
+      // Should NOT have resolved yet
+      let resolved = false;
+      sendPromise.then(() => { resolved = true; });
+      await new Promise((r) => setTimeout(r, 10));
+      expect(resolved).toBe(false);
+
+      // Second final: tool-only turn (another tool call)
+      ws.emit(
+        "message",
+        JSON.stringify({
+          type: "event",
+          event: "chat",
+          payload: {
+            state: "final",
+            idempotencyKey: ik,
+            message: {
+              content: [
+                { type: "tool_use", id: "tool_2", name: "read", input: { path: "/tmp/file" } },
+                { type: "tool_call", id: "tool_3", name: "exec", input: {} },
+              ],
+            },
+          },
+        }),
+      );
+      await new Promise((r) => setTimeout(r, 10));
+      expect(resolved).toBe(false);
+
+      // Final real reply with text content
+      ws.emit(
+        "message",
+        JSON.stringify({
+          type: "event",
+          event: "chat",
+          payload: {
+            state: "final",
+            idempotencyKey: ik,
+            message: {
+              content: [
+                { type: "text", text: '{"endpoints": ["GET /api/users", "POST /api/tasks"]}' },
+              ],
+            },
+          },
+        }),
+      );
+
+      const result = await sendPromise;
+      expect(result).toBe('{"endpoints": ["GET /api/users", "POST /api/tasks"]}');
+      client.disconnect();
+    });
+
+    it("should resolve with deltaBuffer text even after skipping tool-only turns", async () => {
+      const { client, ws } = await createConnectedClient();
+
+      const sendPromise = client.sendAndWait("analyze");
+      await new Promise((r) => setTimeout(r, 10));
+
+      const chatMsg = JSON.parse(ws.sentMessages[ws.sentMessages.length - 1]);
+      const ik = chatMsg.params.idempotencyKey;
+
+      // Ack
+      ws.emit(
+        "message",
+        JSON.stringify({
+          type: "res",
+          id: chatMsg.id,
+          ok: true,
+          payload: {},
+        }),
+      );
+      await new Promise((r) => setTimeout(r, 10));
+
+      // First final: tool-only turn
+      ws.emit(
+        "message",
+        JSON.stringify({
+          type: "event",
+          event: "chat",
+          payload: {
+            state: "final",
+            idempotencyKey: ik,
+            message: {
+              content: [{ type: "tool_use", id: "t1", name: "exec", input: {} }],
+            },
+          },
+        }),
+      );
+      await new Promise((r) => setTimeout(r, 10));
+
+      // Delta for the final turn
+      ws.emit(
+        "message",
+        JSON.stringify({
+          type: "event",
+          event: "chat",
+          payload: {
+            state: "delta",
+            idempotencyKey: ik,
+            message: { content: [{ type: "text", text: "Final streamed answer" }] },
+          },
+        }),
+      );
+      await new Promise((r) => setTimeout(r, 10));
+
+      // Final with empty message text → falls back to deltaBuffer
+      ws.emit(
+        "message",
+        JSON.stringify({
+          type: "event",
+          event: "chat",
+          payload: {
+            state: "final",
+            idempotencyKey: ik,
+            message: { content: [{ type: "text", text: "" }] },
+          },
+        }),
+      );
+
+      const result = await sendPromise;
+      expect(result).toBe("Final streamed answer");
+      client.disconnect();
+    });
+
+    it("should NOT skip final when message has no content array (non-tool turn)", async () => {
+      const { client, ws } = await createConnectedClient();
+
+      const sendPromise = client.sendAndWait("test");
+      await new Promise((r) => setTimeout(r, 10));
+
+      const chatMsg = JSON.parse(ws.sentMessages[ws.sentMessages.length - 1]);
+      const ik = chatMsg.params.idempotencyKey;
+
+      // Ack
+      ws.emit(
+        "message",
+        JSON.stringify({
+          type: "res",
+          id: chatMsg.id,
+          ok: true,
+          payload: {},
+        }),
+      );
+      await new Promise((r) => setTimeout(r, 10));
+
+      // Final with text content (normal reply) - should resolve immediately
+      ws.emit(
+        "message",
+        JSON.stringify({
+          type: "event",
+          event: "chat",
+          payload: {
+            state: "final",
+            idempotencyKey: ik,
+            message: { text: "direct response" },
+          },
+        }),
+      );
+
+      const result = await sendPromise;
+      expect(result).toBe("direct response");
+      client.disconnect();
     });
   });
 
