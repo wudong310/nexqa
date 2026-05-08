@@ -211,7 +211,7 @@ async function analyzeWithAgent(
 
     const reply = await client.sendAndWait(message, {
       timeout: AGENT_TIMEOUT_MS,
-      sessionKey: `scan-${gitSource.id}`,
+      sessionKey: `agent:nexqa:scan-${gitSource.id}`,
     });
 
     // 检查是否是 Agent 错误
