@@ -19,7 +19,6 @@ import {
   GitBranch,
   // [HIDDEN] 半成品，暂时屏蔽 — GitCompare (CI/CD)
   // [HIDDEN] 半成品，暂时屏蔽 — Globe (环境管理)
-  LayoutDashboard,
   // [HIDDEN] 半成品，暂时屏蔽 — Link2 (测试链)
   Menu,
   Plug,
@@ -32,14 +31,9 @@ import { ProjectSwitcher } from "./project-switcher";
 
 const projectNavItems = [
   {
-    to: "/p/$projectId/dashboard" as const,
-    label: "概览",
-    icon: LayoutDashboard,
-  },
-  {
-    to: "/p/$projectId/api" as const,
-    label: "测试用例",
-    icon: FlaskConical,
+    to: "/p/$projectId/git-sources" as const,
+    label: "源码分析",
+    icon: GitBranch,
   },
   {
     to: "/p/$projectId/api-management" as const,
@@ -47,9 +41,9 @@ const projectNavItems = [
     icon: FolderOpen,
   },
   {
-    to: "/p/$projectId/git-sources" as const,
-    label: "源码分析",
-    icon: GitBranch,
+    to: "/p/$projectId/api" as const,
+    label: "测试用例",
+    icon: FlaskConical,
   },
   // [HIDDEN] 半成品，暂时屏蔽 ────────────────────
   // {
