@@ -396,21 +396,28 @@ export class OpenClawBackendClient {
 
     if (state === "delta") {
       const text = this.extractText(payload.message);
-      waiter.deltaBuffer = text; // delta 是累积的
+      // 保留 run 期间收到的最长 delta 文本
+      // Gateway 每个 turn 独立推送 delta（从短到长累积该 turn 的文本）
+      // 跨 turn 时长度会重置，但包含 JSON 的 turn 通常是最长的
+      if (text.length > waiter.deltaBuffer.length) {
+        waiter.deltaBuffer = text;
+      }
       return;
     }
 
     if (state === "final") {
-      const text =
-        this.extractText(payload.message) || waiter.deltaBuffer;
+      const finalText = this.extractText(payload.message);
+      // Gateway 的 final message 经过 display projection 可能被截断（默认 maxChars=8000）
+      // 所以优先使用 deltaBuffer（完整的流式文本），其次使用 final message
+      const text = waiter.deltaBuffer.length > finalText.length
+        ? waiter.deltaBuffer
+        : finalText || waiter.deltaBuffer;
       // 如果 text 为空且消息只包含 tool_use/tool_call，说明是中间 turn
       // agent 还在执行 tool calls，真正的最终回复尚未产生，跳过不 resolve
       if (!text && this.isToolOnlyTurn(payload.message)) {
         log.debug(
           "跳过中间 tool-only turn 的 final 事件，继续等待最终回复",
         );
-        // 重置 deltaBuffer，因为下一个 turn 会产生新的 delta
-        waiter.deltaBuffer = "";
         return;
       }
       // 从 map 中移除

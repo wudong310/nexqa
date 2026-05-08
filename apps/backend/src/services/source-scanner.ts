@@ -67,7 +67,7 @@ interface ScanOptions {
 // ─── 常量 ──────────────────────────────────────────────────────────────────────
 
 const COLLECTION_SCAN_RECORDS = "scan-records";
-const AGENT_TIMEOUT_MS = 180_000;
+const AGENT_TIMEOUT_MS = 300_000; // 5 min — agent 需要 clone + 读文件 + 分析 + 生成 JSON
 
 // ─── 核心流程 ──────────────────────────────────────────────────────────────────
 
