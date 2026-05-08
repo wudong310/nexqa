@@ -16,8 +16,10 @@ export const apiDocumentKeys = {
 
 export const apiEndpointKeys = {
   all: ["api-endpoints"] as const,
-  list: (projectId: string, documentId?: string) =>
-    ["api-endpoints", projectId, documentId] as const,
+  list: (projectId: string, opts?: { documentId?: string; gitSourceId?: string; module?: string }) =>
+    ["api-endpoints", projectId, opts?.documentId, opts?.gitSourceId, opts?.module] as const,
+  modules: (projectId: string, gitSourceId?: string) =>
+    ["api-endpoint-modules", projectId, gitSourceId] as const,
   detail: (id: string) => ["api-endpoint", id] as const,
 };
 
@@ -41,10 +43,21 @@ export function useApiDocument(id: string) {
 
 // ── Endpoint queries ────────────────────────────────
 
-export function useApiEndpoints(projectId: string, documentId?: string) {
+export function useApiEndpoints(
+  projectId: string,
+  opts?: { documentId?: string; gitSourceId?: string; module?: string },
+) {
   return useQuery({
-    queryKey: apiEndpointKeys.list(projectId, documentId),
-    queryFn: () => apiEndpointsApi.list(projectId, documentId),
+    queryKey: apiEndpointKeys.list(projectId, opts),
+    queryFn: () => apiEndpointsApi.list(projectId, opts),
+    enabled: !!projectId,
+  });
+}
+
+export function useApiEndpointModules(projectId: string, gitSourceId?: string) {
+  return useQuery({
+    queryKey: apiEndpointKeys.modules(projectId, gitSourceId),
+    queryFn: () => apiEndpointsApi.modules(projectId, gitSourceId),
     enabled: !!projectId,
   });
 }

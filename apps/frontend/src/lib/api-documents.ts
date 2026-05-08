@@ -39,12 +39,29 @@ export const apiDocumentsApi = {
 
 // ── API Endpoint endpoints ──────────────────────────
 
+export interface ModuleInfo {
+  module: string;
+  count: number;
+}
+
 export const apiEndpointsApi = {
-  /** List endpoints, optionally filtered by documentId */
-  list: (projectId: string, documentId?: string) => {
+  /** List endpoints, optionally filtered by documentId, gitSourceId, module */
+  list: (
+    projectId: string,
+    opts?: { documentId?: string; gitSourceId?: string; module?: string },
+  ) => {
     const params = new URLSearchParams({ projectId });
-    if (documentId) params.append("documentId", documentId);
+    if (opts?.documentId) params.append("documentId", opts.documentId);
+    if (opts?.gitSourceId) params.append("gitSourceId", opts.gitSourceId);
+    if (opts?.module) params.append("module", opts.module);
     return api.get<ApiEndpoint[]>(`/api-endpoints?${params}`);
+  },
+
+  /** Fetch module list for a project (optionally filtered by gitSourceId) */
+  modules: (projectId: string, gitSourceId?: string) => {
+    const params = new URLSearchParams({ projectId });
+    if (gitSourceId) params.append("gitSourceId", gitSourceId);
+    return api.get<ModuleInfo[]>(`/api-endpoints/modules?${params}`);
   },
 
   /** Get endpoint detail with linked test cases */
