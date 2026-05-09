@@ -1,3 +1,4 @@
+import { API_BASE } from "@/lib/api";
 import { api } from "@/lib/api";
 import type { TestReport, ExportFormat } from "@/types/coverage";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -40,7 +41,7 @@ export function useExportReport() {
       format: ExportFormat;
     }) => {
       const res = await fetch(
-        `/nexqa/api/reports/export?id=${reportId}&format=${format}`,
+        `${API_BASE}/reports/export?id=${reportId}&format=${format}`,
       );
       if (!res.ok) throw new Error("Export failed");
       const blob = await res.blob();

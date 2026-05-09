@@ -1,3 +1,4 @@
+import { API_BASE } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -71,7 +72,7 @@ export function ApiImportPage() {
     setParseWarnings([]);
 
     try {
-      const res = await fetch("/nexqa/api/api-endpoints/parse", {
+      const res = await fetch(`${API_BASE}/api-endpoints/parse`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

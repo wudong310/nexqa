@@ -1,3 +1,4 @@
+import { API_BASE } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -360,7 +361,7 @@ export function OpenClawPage() {
   async function uploadViaProxy(file: File): Promise<UrlAttachment> {
     const fd = new FormData();
     fd.append("file", file);
-    const res = await fetch("/nexqa/api/openclaw/upload-image", { method: "POST", body: fd });
+    const res = await fetch(`${API_BASE}/openclaw/upload-image`, { method: "POST", body: fd });
     const data = await res.json();
     if (data.url) {
       return { url: data.url, mime: data.mime };
@@ -537,7 +538,7 @@ export function OpenClawPage() {
           const file = new File([blob], base64Att.fileName || "image.png", { type: base64Att.mimeType });
           const fd = new FormData();
           fd.append("file", file);
-          const res = await fetch("/nexqa/api/openclaw/upload-image", { method: "POST", body: fd });
+          const res = await fetch(`${API_BASE}/openclaw/upload-image`, { method: "POST", body: fd });
           const data = await res.json();
           if (!data.url) throw new Error("上传返回无 URL");
           const urlAtt: UrlAttachment = { url: data.url, mime: data.mime };

@@ -164,7 +164,9 @@ const routeTree = rootRoute.addChildren([
   settingsRoute,
 ]);
 
-export const router = createRouter({ routeTree, basepath: "/nexqa" });
+const basepath = import.meta.env.VITE_BASE === '/' ? '/' : '/nexqa'
+
+export const router = createRouter({ routeTree, basepath });
 
 declare module "@tanstack/react-router" {
   interface Register {

@@ -1,3 +1,4 @@
+import { API_BASE } from "@/lib/api";
 import { getTraceId } from "@/lib/logger";
 
 /**
@@ -9,7 +10,7 @@ export async function doStreamGenerate(
 ): Promise<
   { name: string; request: unknown; expected: unknown; tags: string[] }[]
 > {
-  const res = await fetch("/nexqa/api/test-cases/generate", {
+  const res = await fetch(`${API_BASE}/test-cases/generate`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
