@@ -40,11 +40,6 @@ const projectNavItems = [
     label: "API 管理",
     icon: FolderOpen,
   },
-  {
-    to: "/p/$projectId/api" as const,
-    label: "测试用例",
-    icon: FlaskConical,
-  },
   // [HIDDEN] 半成品，暂时屏蔽 ────────────────────
   // {
   //   to: "/p/$projectId/chains" as const,
@@ -55,6 +50,11 @@ const projectNavItems = [
     to: "/p/$projectId/plans" as const,
     label: "测试方案",
     icon: ClipboardList,
+  },
+  {
+    to: "/p/$projectId/api" as const,
+    label: "测试用例",
+    icon: FlaskConical,
   },
   // {
   //   to: "/p/$projectId/coverage" as const,

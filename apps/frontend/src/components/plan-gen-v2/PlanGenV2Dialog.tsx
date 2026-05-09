@@ -37,7 +37,7 @@ import {
   Sparkles,
   XCircle,
 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 // ── Types ───────────────────────────────────────────
@@ -92,24 +92,27 @@ export function PlanGenV2Dialog({
 
   // ── Poll generation status ─────────────────────────
 
-  useQuery<PollPlanGenV2Response>({
+  const pollQuery = useQuery<PollPlanGenV2Response>({
     queryKey: ["plan-gen-v2", "poll", generationId],
     queryFn: () => api.get(`/plan-generations-v2/${generationId}`),
     enabled: phase === "generating" && !!generationId,
     refetchInterval: 2000,
     refetchIntervalInBackground: false,
-    select: (data) => {
-      // Side effect: update state when terminal
-      if (data.status === "completed") {
-        setResult(data.result);
-        setPhase("completed");
-      } else if (data.status === "failed") {
-        setError(data.error);
-        setPhase("failed");
-      }
-      return data;
-    },
   });
+
+  // Sync poll result to state (avoid side effects in select)
+  useEffect(() => {
+    const data = pollQuery.data;
+    if (!data || phase !== "generating") return;
+
+    if (data.status === "completed") {
+      setResult(data.result ?? null);
+      setPhase("completed");
+    } else if (data.status === "failed") {
+      setError(data.error ?? null);
+      setPhase("failed");
+    }
+  }, [pollQuery.data, phase]);
 
   // ── Handlers ───────────────────────────────────────
 

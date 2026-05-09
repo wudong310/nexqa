@@ -1,10 +1,7 @@
-import { PlanGenSheet } from "@/components/ai/plan-gen-sheet";
 import { PlanGenV2Dialog } from "@/components/plan-gen-v2/PlanGenV2Dialog";
 import { PlanCard } from "@/components/test-plans/plan-card";
 import { PlanDetailView } from "@/components/test-plans/plan-detail-view";
 import { PlanFormDialog } from "@/components/test-plans/plan-form-dialog";
-import { NLPlanInput } from "@/components/test-plans/nl-plan-input";
-import { PlanStageCard } from "@/components/test-plans/plan-stage-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
@@ -28,12 +25,10 @@ import {
   useTestPlans,
   useUpdateTestPlan,
 } from "@/hooks/use-test-plans";
-import { usePlanGenGenerate, usePlanGenAdopt } from "@/hooks/use-plan-gen";
 import type { CreateTestPlan, TestPlan, Project } from "@nexqa/shared";
-import type { PlanGenerationResult } from "@/types/plan-gen";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ClipboardList, Loader2, Plus, Sparkles, Wand2 } from "lucide-react";
+import { ClipboardList, Loader2, Wand2 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -150,10 +145,6 @@ export function TestPlansPage() {
   const [editingPlan, setEditingPlan] = useState<TestPlan | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  // AI plan gen state
-  const [aiSheetOpen, setAiSheetOpen] = useState(false);
-  const [aiResult, setAiResult] = useState<PlanGenerationResult | null>(null);
-
   // V2 plan gen state
   const [v2DialogOpen, setV2DialogOpen] = useState(false);
 
@@ -169,8 +160,6 @@ export function TestPlansPage() {
   const updateMutation = useUpdateTestPlan(projectId);
   const deleteMutation = useDeleteTestPlan(projectId);
   const executeMutation = useExecuteTestPlan();
-  const planGenMutation = usePlanGenGenerate(projectId);
-  const planGenAdoptMutation = usePlanGenAdopt(projectId);
 
   // Find viewing plan from URL param
   const viewingPlan = useMemo(
@@ -179,11 +168,6 @@ export function TestPlansPage() {
   );
 
   // Handlers
-  function openCreate() {
-    setEditingPlan(null);
-    setFormOpen(true);
-  }
-
   function openEdit(plan: TestPlan) {
     setEditingPlan(plan);
     setFormOpen(true);
@@ -275,50 +259,6 @@ export function TestPlansPage() {
     });
   }
 
-  function handleAiGenerate(intent: string) {
-    setAiResult(null);
-    setAiSheetOpen(true);
-    planGenMutation.mutate(
-      { intent },
-      {
-        onSuccess: (data) => {
-          if (data.result) {
-            setAiResult(data.result);
-          }
-        },
-        onError: (error) => {
-          toast.error(
-            `AI 方案生成失败: ${error instanceof Error ? error.message : "未知错误"}`,
-          );
-        },
-      },
-    );
-  }
-
-  function handleAiAdopt() {
-    if (!aiResult) return;
-    planGenAdoptMutation.mutate(
-      { generationId: aiResult.id },
-      {
-        onSuccess: () => {
-          toast.success("AI 方案已采纳");
-          setAiSheetOpen(false);
-          setAiResult(null);
-        },
-        onError: (error) => {
-          toast.error(
-            `方案采纳失败: ${error instanceof Error ? error.message : "未知错误"}`,
-          );
-        },
-      },
-    );
-  }
-
-  function handleAiDiscard() {
-    setAiSheetOpen(false);
-    setAiResult(null);
-  }
-
   // #8 P0: Loading state — Skeleton
   if (isLoading) {
     return (
@@ -382,58 +322,26 @@ export function TestPlansPage() {
               创建可复用的测试执行配方
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setV2DialogOpen(true)}
-              className="gap-1.5 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-300 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/30"
-            >
-              <Wand2 className="h-3.5 w-3.5" />
-              ✨ AI 智能生成(V2)
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setAiResult(null);
-                setAiSheetOpen(true);
-              }}
-              className="gap-1.5 border-violet-200 text-violet-700 hover:bg-violet-50 hover:border-violet-300 dark:border-violet-800 dark:text-violet-300 dark:hover:bg-violet-950/30"
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              AI 生成方案
-            </Button>
-            <Button onClick={openCreate}>
-              <Plus className="h-4 w-4 mr-2" />
-              新建方案
-            </Button>
-          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setV2DialogOpen(true)}
+            className="gap-1.5 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-300 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/30"
+          >
+            <Wand2 className="h-3.5 w-3.5" />
+            ✨ AI 智能生成(V2)
+          </Button>
         </div>
-
-        {/* AI NL Input */}
-        <NLPlanInput
-          onSubmit={handleAiGenerate}
-          isGenerating={planGenMutation.isPending}
-        />
 
         {/* Plan list */}
         {plans.length === 0 ? (
-          <div className="space-y-4">
-            {/* Enhanced empty state with AI input */}
-            <div className="text-center py-8 space-y-4">
-              <Sparkles className="h-10 w-10 text-violet-400 mx-auto" />
-              <div>
-                <h3 className="text-base font-semibold">还没有测试方案</h3>
-                <p className="text-sm text-muted-foreground mt-1">
-                  告诉 AI 你要做什么，自动为你创建
-                </p>
-              </div>
-              <div className="text-xs text-muted-foreground">── 或者 ──</div>
-              <Button variant="outline" onClick={openCreate}>
-                <Plus className="h-4 w-4 mr-2" />
-                手动新建方案
-              </Button>
+          <div className="text-center py-8 space-y-4">
+            <ClipboardList className="h-10 w-10 text-muted-foreground mx-auto" />
+            <div>
+              <h3 className="text-base font-semibold">还没有测试方案</h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                使用 AI 智能生成或从模板快速创建
+              </p>
             </div>
           </div>
         ) : (
@@ -519,24 +427,6 @@ export function TestPlansPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-
-        {/* AI Plan Gen Sheet */}
-        <PlanGenSheet
-          open={aiSheetOpen}
-          onOpenChange={setAiSheetOpen}
-          isGenerating={planGenMutation.isPending}
-          result={aiResult}
-          onAdopt={handleAiAdopt}
-          onDiscard={handleAiDiscard}
-          isAdopting={planGenAdoptMutation.isPending}
-          error={planGenMutation.error}
-          onRetry={() => {
-            if (planGenMutation.variables?.intent) {
-              handleAiGenerate(planGenMutation.variables.intent);
-            }
-          }}
-          projectId={projectId}
-        />
 
         {/* V2 Plan Gen Dialog */}
         <PlanGenV2Dialog
