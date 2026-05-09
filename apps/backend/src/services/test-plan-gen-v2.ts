@@ -14,9 +14,9 @@
 
 import { randomUUID } from "node:crypto";
 import type {
-  PlanGenerationV2,
   PlanGenV2Result,
   PlanGenV2Status,
+  PlanGenerationV2,
   Project,
 } from "@nexqa/shared";
 import { createLogger } from "./logger.js";
@@ -173,7 +173,10 @@ export class TestPlanGenV2Service {
    *
    * 不再传入全量端点，仅传入任务上下文，Agent 自行查询。
    */
-  private buildAgentTaskMessage(gen: PlanGenerationV2, project: Project): string {
+  private buildAgentTaskMessage(
+    gen: PlanGenerationV2,
+    project: Project,
+  ): string {
     const parts: string[] = [
       `## 测试方案生成任务`,
       ``,
@@ -187,12 +190,16 @@ export class TestPlanGenV2Service {
     if (gen.scope) {
       parts.push(`- 范围限定:`);
       if (gen.scope.changedOnly) parts.push(`  - 仅变更端点`);
-      if (gen.scope.gitSourceIds?.length) parts.push(`  - Git Sources: ${gen.scope.gitSourceIds.join(", ")}`);
-      if (gen.scope.endpointIds?.length) parts.push(`  - 指定端点: ${gen.scope.endpointIds.join(", ")}`);
+      if (gen.scope.gitSourceIds?.length)
+        parts.push(`  - Git Sources: ${gen.scope.gitSourceIds.join(", ")}`);
+      if (gen.scope.endpointIds?.length)
+        parts.push(`  - 指定端点: ${gen.scope.endpointIds.join(", ")}`);
     }
 
     parts.push("");
-    parts.push("请按 SKILL.md 中的工作流执行。完成后通过 submit-plan.ts 回写结果。");
+    parts.push(
+      "请按 SKILL.md 中的工作流执行。完成后通过 submit-plan.ts 回写结果。",
+    );
 
     return parts.join("\n");
   }
@@ -204,7 +211,9 @@ export class TestPlanGenV2Service {
    */
   private getNexqaApiUrl(project: Project): string {
     // Project 类型中 baseURL 可能不存在于类型定义，安全访问
-    const baseUrl = (project as Record<string, unknown>).baseURL as string | undefined;
+    const baseUrl = (project as Record<string, unknown>).baseURL as
+      | string
+      | undefined;
     return baseUrl || process.env.NEXQA_API_URL || "http://localhost:4700";
   }
 

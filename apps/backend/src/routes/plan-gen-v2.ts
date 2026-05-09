@@ -6,14 +6,14 @@
  *   GET  /plan-generations-v2/:id          → 轮询生成状态（200）
  */
 
-import { z } from "zod";
-import { Hono } from "hono";
-import type { Project, PlanGenerationV2 } from "@nexqa/shared";
+import type { PlanGenerationV2, Project } from "@nexqa/shared";
 import { PlanGenV2ResultSchema } from "@nexqa/shared";
+import { Hono } from "hono";
+import { z } from "zod";
 import { createLogger } from "../services/logger.js";
 import { createOpenClawClient } from "../services/openclaw-client.js";
-import { TestPlanGenV2Service } from "../services/test-plan-gen-v2.js";
 import { storage } from "../services/storage.js";
+import { TestPlanGenV2Service } from "../services/test-plan-gen-v2.js";
 
 // ─── Zod Schemas ──────────────────────────────────────────────────────────────
 
@@ -71,8 +71,9 @@ function getOrCreateService(
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 /** 项目级路由：POST /:projectId/plan-gen-v2 */
-export const planGenV2ProjectRoutes = new Hono()
-  .post("/:projectId/plan-gen-v2", async (c) => {
+export const planGenV2ProjectRoutes = new Hono().post(
+  "/:projectId/plan-gen-v2",
+  async (c) => {
     const log = createLogger("plan-gen-v2", c.req.header("x-trace-id"));
     const projectId = c.req.param("projectId");
 
@@ -84,8 +85,8 @@ export const planGenV2ProjectRoutes = new Hono()
 
     const parseResult = StartGenerationBodySchema.safeParse(rawBody);
     if (!parseResult.success) {
-      const messages = parseResult.error.errors.map(
-        (e) => e.path.length > 0 ? `${e.path.join(".")}: ${e.message}` : e.message,
+      const messages = parseResult.error.errors.map((e) =>
+        e.path.length > 0 ? `${e.path.join(".")}: ${e.message}` : e.message,
       );
       return c.json({ error: messages.join("; ") }, 400);
     }
@@ -145,7 +146,8 @@ export const planGenV2ProjectRoutes = new Hono()
       log.error(`方案生成启动失败: ${msg}`);
       return c.json({ error: msg }, 500);
     }
-  });
+  },
+);
 
 // ─── Shared Helpers ───────────────────────────────────────────────────────────
 
@@ -179,9 +181,8 @@ export const planGenV2PollRoutes = new Hono()
         return c.json({
           id: gen.id,
           status: gen.status,
-          progress: gen.status === "pending"
-            ? "等待启动..."
-            : "正在分析 API 变更...",
+          progress:
+            gen.status === "pending" ? "等待启动..." : "正在分析 API 变更...",
         });
       case "completed":
         return c.json({
@@ -213,8 +214,8 @@ export const planGenV2PollRoutes = new Hono()
     // 2. Zod 校验
     const parseResult = PlanGenV2ResultSchema.safeParse(rawBody);
     if (!parseResult.success) {
-      const messages = parseResult.error.errors.map(
-        (e) => e.path.length > 0 ? `${e.path.join(".")}: ${e.message}` : e.message,
+      const messages = parseResult.error.errors.map((e) =>
+        e.path.length > 0 ? `${e.path.join(".")}: ${e.message}` : e.message,
       );
       return c.json({ error: `结果格式校验失败: ${messages.join("; ")}` }, 400);
     }

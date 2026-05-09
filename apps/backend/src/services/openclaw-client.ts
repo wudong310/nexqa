@@ -5,8 +5,8 @@
  * 支持自动重连、超时控制、流式消息聚合。
  */
 
-import WebSocket from "ws";
 import { randomUUID } from "node:crypto";
+import WebSocket from "ws";
 import { createLogger } from "./logger.js";
 
 const log = createLogger("openclaw-client");
@@ -348,8 +348,7 @@ export class OpenClawBackendClient {
         this.pendingRequests.delete(id);
         if (frame.ok === false || frame.error) {
           const errObj = frame.error as Record<string, unknown> | undefined;
-          const errMsg =
-            (errObj?.message as string) || "请求失败";
+          const errMsg = (errObj?.message as string) || "请求失败";
           pending.reject(new Error(errMsg));
         } else {
           pending.resolve(frame.payload);
@@ -409,15 +408,14 @@ export class OpenClawBackendClient {
       const finalText = this.extractText(payload.message);
       // Gateway 的 final message 经过 display projection 可能被截断（默认 maxChars=8000）
       // 所以优先使用 deltaBuffer（完整的流式文本），其次使用 final message
-      const text = waiter.deltaBuffer.length > finalText.length
-        ? waiter.deltaBuffer
-        : finalText || waiter.deltaBuffer;
+      const text =
+        waiter.deltaBuffer.length > finalText.length
+          ? waiter.deltaBuffer
+          : finalText || waiter.deltaBuffer;
       // 如果 text 为空且消息只包含 tool_use/tool_call，说明是中间 turn
       // agent 还在执行 tool calls，真正的最终回复尚未产生，跳过不 resolve
       if (!text && this.isToolOnlyTurn(payload.message)) {
-        log.debug(
-          "跳过中间 tool-only turn 的 final 事件，继续等待最终回复",
-        );
+        log.debug("跳过中间 tool-only turn 的 final 事件，继续等待最终回复");
         return;
       }
       // 从 map 中移除
@@ -427,8 +425,7 @@ export class OpenClawBackendClient {
     }
 
     if (state === "error") {
-      const errMsg =
-        (payload.errorMessage as string) || "AI 回复出错";
+      const errMsg = (payload.errorMessage as string) || "AI 回复出错";
       this.removeWaiter(waiter);
       waiter.reject(new Error(errMsg));
       return;
@@ -441,9 +438,7 @@ export class OpenClawBackendClient {
     }
   }
 
-  private findWaiter(
-    payload: Record<string, unknown>,
-  ): ChatWaiter | undefined {
+  private findWaiter(payload: Record<string, unknown>): ChatWaiter | undefined {
     // 如果 payload 包含 idempotencyKey，精确匹配
     const ik = payload.idempotencyKey as string | undefined;
     if (ik && this.chatWaiters.has(ik)) {
@@ -520,7 +515,9 @@ export class OpenClawBackendClient {
    * 发送 session.spawn 请求到 Gateway，Gateway 创建新 session 并启动 Agent。
    * Agent 完成后通过 PUT 路由回写结果，不需要等待。
    */
-  async spawnSession(options: SpawnSessionOptions): Promise<{ sessionId: string }> {
+  async spawnSession(
+    options: SpawnSessionOptions,
+  ): Promise<{ sessionId: string }> {
     if (!this.isConnected) {
       await this.connect();
     }
