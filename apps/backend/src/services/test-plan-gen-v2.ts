@@ -19,6 +19,7 @@ import type {
   PlanGenerationV2,
   Project,
 } from "@nexqa/shared";
+import { PlanGenV2ResultSchema } from "@nexqa/shared";
 import { createLogger } from "./logger.js";
 import type { OpenClawBackendClient } from "./openclaw-client.js";
 import { storage } from "./storage.js";
@@ -111,20 +112,19 @@ export class TestPlanGenV2Service {
   }
 
   /**
-   * 内部：执行方案生成（fire-and-forget 模式）
+   * 内部：执行方案生成（sendAndWait 同步模式）
    *
-   * 重构后仅负责：
+   * 重构后：
    * 1. 更新状态为 generating
    * 2. 验证项目存在性
-   * 3. 构造 Agent 启动消息（含 projectId, generationId, intent, scope）
-   * 4. 通过 OpenClaw 启动 Agent session（指定 nexqa SKILL）
-   *
-   * Agent 完成后通过 PUT /plan-generations-v2/:id/result 回写结果（不再等待）。
+   * 3. 构造 Agent 消息（含 projectId, generationId, intent, scope）
+   * 4. 通过 OpenClaw sendAndWait 同步等待 Agent 返回 JSON
+   * 5. 解析并校验返回结果，更新 generation 状态
    *
    * 错误处理：
-   * - spawn 失败 → 立即标记 generation 为 failed
-   * - Agent 执行失败 → Agent 调用 PUT /error 路由
-   * - session 超时 → OpenClaw Gateway 管理
+   * - 连接失败 / 超时 → 标记 generation 为 failed
+   * - Agent 返回格式错误 → 标记 generation 为 failed
+   * - Zod 校验失败 → 标记 generation 为 failed
    */
   private async executeGeneration(id: string): Promise<void> {
     const gen = this.generations.get(id);
@@ -144,34 +144,59 @@ export class TestPlanGenV2Service {
         throw new Error(`项目不存在: ${gen.projectId}`);
       }
 
-      // 构造 Agent 启动消息
+      // 构造 Agent 消息
       const taskMessage = this.buildAgentTaskMessage(gen, project);
 
-      // 启动 Agent session（fire-and-forget）
-      // Agent 完成后通过 PUT /plan-generations-v2/:id/result 回写
-      await this.openclawClient.spawnSession({
-        skill: "nexqa",
-        message: taskMessage,
-        meta: {
-          generationId: id,
-          projectId: gen.projectId,
-        },
+      // 连接 Gateway
+      await this.openclawClient.connect();
+
+      // sendAndWait 同步等待 Agent 返回（5分钟超时）
+      const reply = await this.openclawClient.sendAndWait(taskMessage, {
+        timeout: 300_000, // 5分钟，Agent 需多步查询+推理
+        sessionKey: `agent:nexqa:plan-gen-${gen.id}`,
       });
 
-      this.log.info(`Agent session 已启动: generationId=${id}`);
-      // 注意：不再等待结果，Agent 异步回写
+      // 断开连接
+      this.openclawClient.disconnect();
+
+      // 解析 JSON
+      const parsed = extractJson(reply);
+
+      // Zod 校验
+      const result = PlanGenV2ResultSchema.safeParse(parsed);
+      if (!result.success) {
+        const errorMsg = `方案格式校验失败: ${result.error.message}`;
+        this.log.error(errorMsg);
+        gen.status = "failed";
+        gen.error = errorMsg;
+        gen.completedAt = new Date().toISOString();
+        return;
+      }
+
+      // 成功
+      gen.status = "completed";
+      gen.result = result.data;
+      gen.completedAt = new Date().toISOString();
+      this.log.info(`方案生成完成: id=${id}`);
     } catch (err) {
       gen.status = "failed";
       gen.error = this.classifyError(err);
       gen.completedAt = new Date().toISOString();
-      this.log.error(`Agent session 启动失败: id=${id}, error="${gen.error}"`);
+      this.log.error(`方案生成失败: id=${id}, error="${gen.error}"`);
+
+      // 确保断开连接
+      try {
+        this.openclawClient.disconnect();
+      } catch {
+        // ignore
+      }
     }
   }
 
   /**
-   * 构造 Agent 启动消息
+   * 构造 Agent 消息
    *
-   * 不再传入全量端点，仅传入任务上下文，Agent 自行查询。
+   * 包含项目信息、generationId、用户意图、范围、API 地址、SKILL 使用指引、输出格式要求。
    */
   private buildAgentTaskMessage(
     gen: PlanGenerationV2,
@@ -197,9 +222,65 @@ export class TestPlanGenV2Service {
     }
 
     parts.push("");
+    parts.push(`## SKILL 使用指引`);
     parts.push(
-      "请按 SKILL.md 中的工作流执行。完成后通过 submit-plan.ts 回写结果。",
+      `使用 \`npx tsx ~/Studio/skills/tools/nexqa/scripts/\` 下的脚本按需查询：`,
     );
+    parts.push(
+      `- \`list-endpoints.ts\` — 查询项目端点列表（--project-id ${gen.projectId}）`,
+    );
+    parts.push(
+      `- \`list-tests.ts\` — 查询项目测试用例（--project-id ${gen.projectId}）`,
+    );
+    parts.push(
+      `- \`get-endpoint.ts\` — 查询单个端点详情（--endpoint-id <id>）`,
+    );
+    parts.push(
+      `- \`submit-plan.ts\` — 提交生成的测试方案（--generation-id ${gen.id} --plan '<json>'）`,
+    );
+
+    parts.push("");
+    parts.push(`## 输出格式要求`);
+    parts.push(`返回纯 JSON，不要 markdown 代码块，不要任何额外文字。`);
+    parts.push(`格式为 PlanGenV2Result：`);
+    parts.push("```json");
+    parts.push(`{
+  "parsedIntent": {
+    "type": "string",
+    "scope": "string",
+    "urgency": "normal" | "quick"
+  },
+  "plan": {
+    "name": "string",
+    "description": "string",
+    "stages": [
+      {
+        "name": "string",
+        "order": 0,
+        "selection": {},
+        "criteria": {
+          "minPassRate": 0.9,
+          "maxP0Fails": 0,
+          "maxP1Fails": 5
+        },
+        "gate": false
+      }
+    ],
+    "execution": {
+      "concurrency": 3,
+      "retryOnFail": 0,
+      "timeoutMs": 30000,
+      "stopOnGateFail": true
+    },
+    "criteria": {
+      "minPassRate": 0.95,
+      "maxP0Fails": 0,
+      "maxP1Fails": 3
+    },
+    "reasoning": "string"
+  }
+}`);
+    parts.push("```");
 
     return parts.join("\n");
   }
@@ -243,4 +324,47 @@ export class TestPlanGenV2Service {
 
     return `生成失败: ${msg}`;
   }
+}
+
+// ─── 辅助函数 ────────────────────────────────────────────────────────────────────
+
+/**
+ * 从 Agent 返回文本中提取 JSON
+ *
+ * 尝试直接解析，失败则用正则提取 ```json ... ``` 或 { ... } 块。
+ */
+export function extractJson(text: string): unknown {
+  // 尝试 1：直接解析为 JSON
+  try {
+    const parsed = JSON.parse(text.trim());
+    return parsed;
+  } catch {
+    // 继续尝试
+  }
+
+  // 尝试 2：提取 markdown 代码块中的 JSON
+  const codeBlockMatch = text.match(/```(?:json)?\s*\n([\s\S]*?)\n```/);
+  if (codeBlockMatch) {
+    try {
+      const parsed = JSON.parse(codeBlockMatch[1].trim());
+      return parsed;
+    } catch {
+      // 继续尝试
+    }
+  }
+
+  // 尝试 3：找到第一个 { 和最后一个 } 之间的内容
+  const firstBrace = text.indexOf("{");
+  const lastBrace = text.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    try {
+      const jsonStr = text.slice(firstBrace, lastBrace + 1);
+      const parsed = JSON.parse(jsonStr);
+      return parsed;
+    } catch {
+      // 解析失败
+    }
+  }
+
+  throw new Error("无法从返回文本中提取有效 JSON");
 }
