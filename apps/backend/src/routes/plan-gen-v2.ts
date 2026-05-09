@@ -8,7 +8,8 @@
 
 import { z } from "zod";
 import { Hono } from "hono";
-import type { Project } from "@nexqa/shared";
+import type { Project, PlanGenerationV2 } from "@nexqa/shared";
+import { PlanGenV2ResultSchema } from "@nexqa/shared";
 import { createLogger } from "../services/logger.js";
 import { createOpenClawClient } from "../services/openclaw-client.js";
 import { TestPlanGenV2Service } from "../services/test-plan-gen-v2.js";
@@ -146,41 +147,123 @@ export const planGenV2ProjectRoutes = new Hono()
     }
   });
 
-/** 轮询路由：GET /plan-generations-v2/:id */
+// ─── Shared Helpers ───────────────────────────────────────────────────────────
+
+/**
+ * 从 serviceCache 中查找 generation 记录
+ *
+ * 遍历所有 service 实例（按 connectionId 分组），返回第一个匹配的 generation。
+ */
+function findGeneration(id: string): PlanGenerationV2 | null {
+  for (const service of serviceCache.values()) {
+    const gen = service.getGeneration(id);
+    if (gen) return gen;
+  }
+  return null;
+}
+
+/** 轮询路由：GET /plan-generations-v2/:id + PUT result/error */
 export const planGenV2PollRoutes = new Hono()
   .get("/plan-generations-v2/:id", async (c) => {
     const id = c.req.param("id");
 
-    // 遍历所有 service 实例查找 generation
-    for (const service of serviceCache.values()) {
-      const gen = service.getGeneration(id);
-      if (gen) {
-        // 根据状态返回不同结构
-        switch (gen.status) {
-          case "pending":
-          case "generating":
-            return c.json({
-              id: gen.id,
-              status: gen.status,
-              progress: gen.status === "pending"
-                ? "等待启动..."
-                : "正在分析 API 变更...",
-            });
-          case "completed":
-            return c.json({
-              id: gen.id,
-              status: gen.status,
-              result: gen.result,
-            });
-          case "failed":
-            return c.json({
-              id: gen.id,
-              status: gen.status,
-              error: gen.error,
-            });
-        }
-      }
+    const gen = findGeneration(id);
+    if (!gen) {
+      return c.json({ error: "生成记录不存在" }, 404);
     }
 
-    return c.json({ error: "生成记录不存在" }, 404);
+    // 根据状态返回不同结构
+    switch (gen.status) {
+      case "pending":
+      case "generating":
+        return c.json({
+          id: gen.id,
+          status: gen.status,
+          progress: gen.status === "pending"
+            ? "等待启动..."
+            : "正在分析 API 变更...",
+        });
+      case "completed":
+        return c.json({
+          id: gen.id,
+          status: gen.status,
+          result: gen.result,
+        });
+      case "failed":
+        return c.json({
+          id: gen.id,
+          status: gen.status,
+          error: gen.error,
+        });
+    }
+  })
+
+  // ─── PUT /plan-generations-v2/:id/result ─────────────────────────────────
+  // Agent 完成后通过 submit-plan.ts 调用此路由回写结构化结果
+  .put("/plan-generations-v2/:id/result", async (c) => {
+    const log = createLogger("plan-gen-v2", c.req.header("x-trace-id"));
+    const id = c.req.param("id");
+
+    // 1. 解析请求体
+    const rawBody = await c.req.json().catch(() => null);
+    if (!rawBody) {
+      return c.json({ error: "请求体不能为空" }, 400);
+    }
+
+    // 2. Zod 校验
+    const parseResult = PlanGenV2ResultSchema.safeParse(rawBody);
+    if (!parseResult.success) {
+      const messages = parseResult.error.errors.map(
+        (e) => e.path.length > 0 ? `${e.path.join(".")}: ${e.message}` : e.message,
+      );
+      return c.json({ error: `结果格式校验失败: ${messages.join("; ")}` }, 400);
+    }
+
+    // 3. 查找 generation 记录
+    const generation = findGeneration(id);
+    if (!generation) {
+      return c.json({ error: "生成记录不存在" }, 404);
+    }
+
+    // 4. 状态校验（已终态时仅 warn，仍允许覆写以支持幂等重试）
+    if (generation.status === "completed" || generation.status === "failed") {
+      log.warn(`generation ${id} 已终态 (${generation.status})，覆写结果`);
+    }
+
+    // 5. 更新记录
+    generation.status = "completed";
+    generation.result = parseResult.data;
+    generation.completedAt = new Date().toISOString();
+    generation.error = null;
+
+    log.info(`方案结果已回写: id=${id}, plan="${parseResult.data.plan.name}"`);
+
+    return c.json({
+      ok: true,
+      id: generation.id,
+      status: generation.status,
+    });
+  })
+
+  // ─── PUT /plan-generations-v2/:id/error ──────────────────────────────────
+  // Agent 执行失败时调用此路由上报错误
+  .put("/plan-generations-v2/:id/error", async (c) => {
+    const log = createLogger("plan-gen-v2", c.req.header("x-trace-id"));
+    const id = c.req.param("id");
+
+    const body = await c.req.json().catch(() => null);
+    const errorMsg = body?.error || "未知错误";
+
+    const generation = findGeneration(id);
+    if (!generation) {
+      return c.json({ error: "生成记录不存在" }, 404);
+    }
+
+    generation.status = "failed";
+    generation.error = String(errorMsg);
+    generation.completedAt = new Date().toISOString();
+
+    log.info(`方案生成标记失败: id=${id}, error="${errorMsg}"`);
+
+    return c.json({ ok: true, id: generation.id, status: "failed" });
   });

@@ -511,6 +511,67 @@ export class OpenClawBackendClient {
     const raw = JSON.stringify(frame);
     this.ws.send(raw);
   }
+
+  // ─── Spawn Session ───────────────────────────────────────────────────────────
+
+  /**
+   * 启动 Agent session（异步，不等待完成）
+   *
+   * 发送 session.spawn 请求到 Gateway，Gateway 创建新 session 并启动 Agent。
+   * Agent 完成后通过 PUT 路由回写结果，不需要等待。
+   */
+  async spawnSession(options: SpawnSessionOptions): Promise<{ sessionId: string }> {
+    if (!this.isConnected) {
+      await this.connect();
+    }
+
+    const reqId = randomUUID();
+
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingRequests.delete(reqId);
+        reject(new Error("spawn session 请求超时"));
+      }, 15_000);
+
+      this.pendingRequests.set(reqId, {
+        resolve: (payload) => {
+          clearTimeout(timer);
+          const p = payload as { sessionId?: string } | undefined;
+          resolve({ sessionId: p?.sessionId ?? reqId });
+        },
+        reject: (err) => {
+          clearTimeout(timer);
+          reject(err);
+        },
+        timer,
+      });
+
+      this.sendRaw({
+        type: "req",
+        id: reqId,
+        method: "session.spawn",
+        params: {
+          skill: options.skill,
+          message: options.message,
+          meta: options.meta,
+          timeout: options.timeout ?? 300_000,
+        },
+      });
+    });
+  }
+}
+
+// ─── Types (Spawn Session) ─────────────────────────────────────────────────────
+
+export interface SpawnSessionOptions {
+  /** 指定 SKILL 名称 */
+  skill: string;
+  /** Agent 启动消息 */
+  message: string;
+  /** 元数据（透传给 session） */
+  meta?: Record<string, unknown>;
+  /** session 超时（ms），默认 300_000（5分钟） */
+  timeout?: number;
 }
 
 // ─── 工厂函数 ──────────────────────────────────────────────────────────────────

@@ -1,42 +1,30 @@
 /**
  * test-plan-gen-v2 — 基于 OpenClaw Agent 的测试方案生成服务
  *
- * 与 V1（plan-generator.ts）的区别：
- * - V1：本地 LLM 直调 + 规则引擎降级
- * - V2：通过 OpenClaw Agent 调用，Agent 有完整上下文理解能力
+ * V2 重构后：
+ * - 从"同步 prompt 模式"改为"异步 session 模式"
+ * - service 仅负责"触发 session"，不再做数据查询/prompt 构建/结果解析
+ * - Agent 通过 PUT 路由异步回写结果
  *
  * 状态机：pending → generating → completed / failed
+ *   - pending → generating: executeGeneration 启动时
+ *   - generating → completed: Agent 通过 PUT /result 回写
+ *   - generating → failed: Agent 通过 PUT /error 上报 或 spawn 失败
  */
 
 import { randomUUID } from "node:crypto";
 import type {
-  ApiEndpoint,
   PlanGenerationV2,
   PlanGenV2Result,
   PlanGenV2Status,
   Project,
-  ScanRecord,
 } from "@nexqa/shared";
-import { PlanGenV2ResultSchema } from "@nexqa/shared";
-import {
-  buildPlanGenV2Prompt,
-  type PlanGenV2ApiChanges,
-  type PlanGenV2Endpoint,
-  type PlanGenV2ProjectContext,
-} from "../prompts/plan-gen-v2.js";
 import { createLogger } from "./logger.js";
 import type { OpenClawBackendClient } from "./openclaw-client.js";
 import { storage } from "./storage.js";
 
 // Re-export types for consumers
 export type { PlanGenerationV2, PlanGenV2Result, PlanGenV2Status };
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const TIMEOUTS = {
-  /** 测试方案生成最长等待 30s */
-  planGeneration: 30_000,
-} as const;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -123,14 +111,20 @@ export class TestPlanGenV2Service {
   }
 
   /**
-   * 内部：执行方案生成
+   * 内部：执行方案生成（fire-and-forget 模式）
    *
+   * 重构后仅负责：
    * 1. 更新状态为 generating
-   * 2. 查询项目上下文、API 端点、变更数据
-   * 3. 根据 scope 条件（changedOnly / endpointIds）过滤端点并注入变更
-   * 4. 调用 buildPlanGenV2Prompt 构建结构化 prompt
-   * 5. 调用 openclaw-client.sendAndWait 发送 prompt
-   * 6. 解析返回的 JSON 结果 + Zod 校验 + 状态更新
+   * 2. 验证项目存在性
+   * 3. 构造 Agent 启动消息（含 projectId, generationId, intent, scope）
+   * 4. 通过 OpenClaw 启动 Agent session（指定 nexqa SKILL）
+   *
+   * Agent 完成后通过 PUT /plan-generations-v2/:id/result 回写结果（不再等待）。
+   *
+   * 错误处理：
+   * - spawn 失败 → 立即标记 generation 为 failed
+   * - Agent 执行失败 → Agent 调用 PUT /error 路由
+   * - session 超时 → OpenClaw Gateway 管理
    */
   private async executeGeneration(id: string): Promise<void> {
     const gen = this.generations.get(id);
@@ -144,222 +138,74 @@ export class TestPlanGenV2Service {
     this.log.info(`开始生成: id=${id}, intent="${gen.intent}"`);
 
     try {
-      // ── 1. 查询项目上下文 ────────────────────────────────────────
+      // 验证项目存在性
       const project = await storage.read<Project>("projects", gen.projectId);
       if (!project) {
         throw new Error(`项目不存在: ${gen.projectId}`);
       }
 
-      // ── 2. 查询该项目下所有 API 端点 ────────────────────────────
-      const allEndpoints = await storage.list<ApiEndpoint>("api-endpoints");
-      const projectEndpoints = allEndpoints.filter(
-        (ep) => ep.projectId === gen.projectId,
-      );
+      // 构造 Agent 启动消息
+      const taskMessage = this.buildAgentTaskMessage(gen, project);
 
-      // ── 3. 查询该项目下现有用例总数（用于项目上下文） ────────────
-      const allCases = await storage.list<{ id: string; projectId: string }>("test-cases");
-      const totalCases = allCases.filter((tc) => tc.projectId === gen.projectId).length;
-
-      // ── 4. 根据 scope 条件构建端点列表和变更数据 ────────────────
-      let endpointList: PlanGenV2Endpoint[];
-      let apiChanges: PlanGenV2ApiChanges | undefined;
-
-      if (gen.scope?.changedOnly && gen.scope.gitSourceIds?.length) {
-        // changedOnly 模式：查询最新扫描变更，注入 apiChanges
-        const changesResult = await this.getLatestChanges(gen.scope.gitSourceIds);
-        apiChanges = changesResult.apiChanges;
-        endpointList = changesResult.affectedEndpoints.length > 0
-          ? this.toPromptEndpoints(changesResult.affectedEndpoints)
-          : this.toPromptEndpoints(projectEndpoints); // 无变更时降级为全量
-
-        if (apiChanges && (apiChanges.added.length + apiChanges.updated.length + apiChanges.removed.length) > 0) {
-          this.log.info(
-            `变更注入: added=${apiChanges.added.length} updated=${apiChanges.updated.length} removed=${apiChanges.removed.length}`,
-          );
-        } else {
-          this.log.info("changedOnly 模式但无变更数据，降级为全量端点分析");
-          apiChanges = undefined;
-        }
-      } else if (gen.scope?.endpointIds?.length) {
-        // 指定端点模式：仅传递指定端点
-        const specifiedIds = new Set(gen.scope.endpointIds);
-        const filtered = projectEndpoints.filter((ep) => specifiedIds.has(ep.id));
-        endpointList = filtered.length > 0
-          ? this.toPromptEndpoints(filtered)
-          : this.toPromptEndpoints(projectEndpoints); // 指定的端点未找到时降级为全量
-
-        if (filtered.length > 0) {
-          this.log.info(`指定端点过滤: ${filtered.length}/${gen.scope.endpointIds.length} 命中`);
-        } else {
-          this.log.info("指定端点均未找到，降级为全量端点分析");
-        }
-      } else {
-        // 默认：全量端点分析
-        endpointList = this.toPromptEndpoints(projectEndpoints);
-        this.log.info(`全量端点分析: ${endpointList.length} 个端点`);
-      }
-
-      // ── 5. 构建项目上下文 ───────────────────────────────────────
-      const projectContext: PlanGenV2ProjectContext = {
-        name: project.name,
-        totalCases,
-        tagDistribution: "（自动分析）", // TODO: 后续从用例标签统计生成
-      };
-
-      // ── 6. 使用 prompt 模板构建结构化 prompt ────────────────────
-      const prompt = buildPlanGenV2Prompt({
-        projectContext,
-        endpointList,
-        apiChanges,
-        userIntent: gen.intent,
+      // 启动 Agent session（fire-and-forget）
+      // Agent 完成后通过 PUT /plan-generations-v2/:id/result 回写
+      await this.openclawClient.spawnSession({
+        skill: "nexqa",
+        message: taskMessage,
+        meta: {
+          generationId: id,
+          projectId: gen.projectId,
+        },
       });
 
-      // ── 7. 调用 OpenClaw Agent ─────────────────────────────────
-      const rawResponse = await this.openclawClient.sendAndWait(prompt, {
-        timeout: TIMEOUTS.planGeneration,
-      });
-
-      // 解析 JSON
-      const parsed = this.parseAgentResponse(rawResponse);
-
-      // Zod 校验
-      const validated = PlanGenV2ResultSchema.parse(parsed);
-
-      // 完成
-      gen.status = "completed";
-      gen.result = validated;
-      gen.completedAt = new Date().toISOString();
-      this.log.info(
-        `方案生成完成: id=${id}, plan="${validated.plan.name}"`,
-      );
+      this.log.info(`Agent session 已启动: generationId=${id}`);
+      // 注意：不再等待结果，Agent 异步回写
     } catch (err) {
-      // 失败处理
       gen.status = "failed";
       gen.error = this.classifyError(err);
       gen.completedAt = new Date().toISOString();
-      this.log.error(`方案生成失败: id=${id}, error="${gen.error}"`);
+      this.log.error(`Agent session 启动失败: id=${id}, error="${gen.error}"`);
     }
   }
 
-  // ── 变更数据查询 ─────────────────────────────────────────────────────────
-
   /**
-   * 查询 gitSourceIds 关联的最新扫描变更
+   * 构造 Agent 启动消息
    *
-   * 逻辑：
-   * 1. 获取所有 ScanRecord，按 gitSourceId 筛选
-   * 2. 取每个 gitSourceId 最新的 completed 记录
-   * 3. 汇总 diff 结果（added/updated/removed）转为 PlanGenV2ApiChanges
-   * 4. 收集受影响的端点用于过滤
+   * 不再传入全量端点，仅传入任务上下文，Agent 自行查询。
    */
-  private async getLatestChanges(gitSourceIds: string[]): Promise<{
-    apiChanges: PlanGenV2ApiChanges;
-    affectedEndpoints: ApiEndpoint[];
-  }> {
-    const allScanRecords = await storage.list<ScanRecord>("scan-records");
-    const sourceIdSet = new Set(gitSourceIds);
+  private buildAgentTaskMessage(gen: PlanGenerationV2, project: Project): string {
+    const parts: string[] = [
+      `## 测试方案生成任务`,
+      ``,
+      `- 项目ID: ${gen.projectId}`,
+      `- 项目名称: ${project.name}`,
+      `- 生成记录ID: ${gen.id}`,
+      `- NexQA API: ${this.getNexqaApiUrl(project)}`,
+      `- 用户意图: "${gen.intent}"`,
+    ];
 
-    // 按 gitSourceId 分组，取最新 completed 的记录
-    const latestBySource = new Map<string, ScanRecord>();
-    for (const record of allScanRecords) {
-      if (!sourceIdSet.has(record.gitSourceId)) continue;
-      if (record.status !== "completed") continue;
-      if (!record.completedAt) continue;
-
-      const existing = latestBySource.get(record.gitSourceId);
-      if (!existing || record.completedAt > (existing.completedAt ?? "")) {
-        latestBySource.set(record.gitSourceId, record);
-      }
+    if (gen.scope) {
+      parts.push(`- 范围限定:`);
+      if (gen.scope.changedOnly) parts.push(`  - 仅变更端点`);
+      if (gen.scope.gitSourceIds?.length) parts.push(`  - Git Sources: ${gen.scope.gitSourceIds.join(", ")}`);
+      if (gen.scope.endpointIds?.length) parts.push(`  - 指定端点: ${gen.scope.endpointIds.join(", ")}`);
     }
 
-    // 汇总变更
-    const added: string[] = [];
-    const updated: string[] = [];
-    const removed: string[] = [];
-    const affectedEndpointIds = new Set<string>();
+    parts.push("");
+    parts.push("请按 SKILL.md 中的工作流执行。完成后通过 submit-plan.ts 回写结果。");
 
-    for (const record of latestBySource.values()) {
-      if (!record.result?.changes) continue;
-
-      for (const change of record.result.changes) {
-        const label = `${change.method} ${change.path}`;
-        switch (change.type) {
-          case "added":
-            added.push(label);
-            break;
-          case "updated":
-            updated.push(label);
-            break;
-          case "removed":
-            removed.push(label);
-            break;
-        }
-        if (change.endpointId) {
-          affectedEndpointIds.add(change.endpointId);
-        }
-      }
-    }
-
-    // 查询受影响的端点详情
-    let affectedEndpoints: ApiEndpoint[] = [];
-    if (affectedEndpointIds.size > 0) {
-      const allEndpoints = await storage.list<ApiEndpoint>("api-endpoints");
-      affectedEndpoints = allEndpoints.filter((ep) => affectedEndpointIds.has(ep.id));
-    }
-
-    return {
-      apiChanges: { added, updated, removed },
-      affectedEndpoints,
-    };
-  }
-
-  // ── 端点转换 ────────────────────────────────────────────────────────────
-
-  /**
-   * 将 ApiEndpoint[] 转换为 prompt 模板需要的 PlanGenV2Endpoint[] 格式
-   */
-  private toPromptEndpoints(endpoints: ApiEndpoint[]): PlanGenV2Endpoint[] {
-    return endpoints.map((ep) => ({
-      method: ep.method,
-      path: ep.path,
-      summary: ep.summary || "",
-    }));
+    return parts.join("\n");
   }
 
   /**
-   * 解析 Agent 返回的文本为 JSON
+   * 获取 NexQA API 地址（供脚本的 --base-url 参数使用）
    *
-   * 处理策略（参照 §6.4）：
-   * 1. 直接 JSON.parse
-   * 2. 提取 ```json 代码块后 parse
-   * 3. 都失败则抛出格式错误
+   * 优先使用 project.baseURL，其次回退到默认本地地址。
    */
-  private parseAgentResponse(raw: string): unknown {
-    const trimmed = raw.trim();
-
-    // 尝试直接解析
-    try {
-      return JSON.parse(trimmed);
-    } catch {
-      // 继续尝试代码块提取
-    }
-
-    // 尝试提取 ```json ... ``` 代码块
-    const jsonBlockRegex = /```(?:json)?\s*\n?([\s\S]*?)\n?```/;
-    const match = trimmed.match(jsonBlockRegex);
-    if (match?.[1]) {
-      try {
-        return JSON.parse(match[1].trim());
-      } catch {
-        throw new Error(
-          `Agent 返回的 JSON 代码块解析失败: ${match[1].slice(0, 100)}...`,
-        );
-      }
-    }
-
-    throw new Error(
-      `Agent 返回非 JSON 格式: ${trimmed.slice(0, 200)}...`,
-    );
+  private getNexqaApiUrl(project: Project): string {
+    // Project 类型中 baseURL 可能不存在于类型定义，安全访问
+    const baseUrl = (project as Record<string, unknown>).baseURL as string | undefined;
+    return baseUrl || process.env.NEXQA_API_URL || "http://localhost:4700";
   }
 
   /**
@@ -374,7 +220,7 @@ export class TestPlanGenV2Service {
 
     // 超时
     if (msg.includes("超时") || msg.includes("timeout")) {
-      return `生成超时 (${TIMEOUTS.planGeneration}ms): ${msg}`;
+      return `spawn session 超时: ${msg}`;
     }
 
     // 连接失败
@@ -384,16 +230,6 @@ export class TestPlanGenV2Service {
       msg.includes("connect")
     ) {
       return `OpenClaw 连接失败: ${msg}`;
-    }
-
-    // Zod 校验失败
-    if (err.name === "ZodError") {
-      return `Agent 返回格式校验失败: ${msg}`;
-    }
-
-    // JSON 解析失败
-    if (msg.includes("JSON") || msg.includes("解析")) {
-      return `Agent 返回格式错误: ${msg}`;
     }
 
     return `生成失败: ${msg}`;
