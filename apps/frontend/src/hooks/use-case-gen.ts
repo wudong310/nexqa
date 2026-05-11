@@ -1,3 +1,4 @@
+import { API_BASE } from "@/lib/api";
 import { api } from "@/lib/api";
 import { getTraceId } from "@/lib/logger";
 import type {
@@ -78,7 +79,7 @@ async function fetchEndpointCases(
   isolationRule: boolean,
   signal: AbortSignal,
 ): Promise<GeneratedCase[]> {
-  const res = await fetch("/nexqa/api/test-cases/generate", {
+  const res = await fetch(`${API_BASE}/test-cases/generate`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

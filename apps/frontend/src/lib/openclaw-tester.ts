@@ -1,3 +1,4 @@
+import { API_BASE } from "@/lib/api";
 import type { OpenClawConnection } from "@nexqa/shared";
 import { createLogger, getTraceId } from "./logger";
 
@@ -116,7 +117,7 @@ async function fetchConnectParams(
   nonce: string,
   logs: TestLogEntry[],
 ): Promise<Record<string, unknown>> {
-  const url = "/nexqa/api/openclaw/proxy-sign-challenge";
+  const url = `${API_BASE}/openclaw/proxy-sign-challenge`;
   logs.push({
     ts: ts(),
     direction: "send",

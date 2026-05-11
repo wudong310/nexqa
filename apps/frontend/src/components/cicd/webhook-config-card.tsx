@@ -1,3 +1,4 @@
+import { API_BASE } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,7 +25,7 @@ export function WebhookEndpointCard({
   onRegenerateToken: () => void;
 }) {
   const [showToken, setShowToken] = useState(false);
-  const webhookUrl = `${window.location.origin}/nexqa/api/webhooks/${projectId}/trigger`;
+  const webhookUrl = `${window.location.origin}${API_BASE}/webhooks/${projectId}/trigger`;
   const token = config?.incoming.token ?? "nexqa_wh_...";
 
   function copyToClipboard(text: string) {

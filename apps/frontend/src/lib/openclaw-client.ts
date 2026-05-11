@@ -1,3 +1,4 @@
+import { API_BASE } from "@/lib/api";
 import type { OpenClawConnection } from "@nexqa/shared";
 
 export type ConnectionStatus = "disconnected" | "connecting" | "connected";
@@ -294,7 +295,7 @@ export class OpenClawClient {
 
     // Step 1: WebSocket connect via backend proxy to avoid browser Origin header
     // The proxy strips the browser's Origin so gateway doesn't reject us
-    const proxyUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/nexqa/api/openclaw/ws-proxy?target=${encodeURIComponent(gatewayUrl)}`;
+    const proxyUrl = `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}${API_BASE}/openclaw/ws-proxy?target=${encodeURIComponent(gatewayUrl)}`;
     this.addLog("info", `使用 WebSocket 代理: ${proxyUrl}`);
 
     const ws = await new Promise<WebSocket>((resolve, reject) => {
@@ -432,7 +433,7 @@ export class OpenClawClient {
     const clawRunnerUrl = this._handshakeClawRunnerUrl;
     try {
       // Use backend proxy to avoid CORS issues with claw-runner
-      const url = "/nexqa/api/openclaw/proxy-sign-challenge";
+      const url = `${API_BASE}/openclaw/proxy-sign-challenge`;
       this.addLog(
         "info",
         `调用 claw-runner 签名 (via proxy): ${clawRunnerUrl}`,

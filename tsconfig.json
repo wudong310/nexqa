@@ -10,9 +10,13 @@
     "resolveJsonModule": true,
     "declaration": true,
     "declarationMap": true,
-    "sourceMap": true,
-    "outDir": "dist",
-    "rootDir": "src"
+    "sourceMap": true
   },
-  "exclude": ["node_modules", "dist"]
+  "files": [],
+  "references": [
+    { "path": "apps/backend" },
+    { "path": "apps/cli" },
+    { "path": "apps/frontend" },
+    { "path": "packages/shared" }
+  ]
 }
