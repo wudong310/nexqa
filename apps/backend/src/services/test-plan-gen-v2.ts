@@ -156,11 +156,24 @@ export class TestPlanGenV2Service {
         sessionKey: `agent:nexqa:plan-gen-${gen.id}`,
       });
 
+      // 调试日志：打印 reply 原文（截断 4KB）
+      const replyPreview = reply.length > 4000 ? reply.slice(0, 4000) + '...[truncated]' : reply;
+      this.log.info(`Agent 返回原文: generationId=${gen.id}, replyLength=${reply.length}, reply=${replyPreview}`);
+
       // 断开连接
       this.openclawClient.disconnect();
 
       // 解析 JSON
-      const parsed = extractJson(reply);
+      let parsed: unknown;
+      try {
+        parsed = extractJson(reply);
+      } catch (extractErr) {
+        // 解析失败时打印更详细的错误信息
+        this.log.error(
+          `JSON 解析失败: generationId=${gen.id}, error=${extractErr instanceof Error ? extractErr.message : String(extractErr)}, replyStart=${reply.slice(0, 200)}, replyEnd=${reply.slice(-200)}`,
+        );
+        throw extractErr;
+      }
 
       // Zod 校验
       const result = PlanGenV2ResultSchema.safeParse(parsed);
