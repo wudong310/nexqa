@@ -218,6 +218,8 @@ export class TestPlanGenV2Service {
     const parts: string[] = [
       `## 测试方案生成任务`,
       ``,
+      `**重要：直接返回 JSON，不要任何解释性文字，不要 markdown 代码块。**`,
+      ``,
       `- 项目ID: ${gen.projectId}`,
       `- 项目名称: ${project.name}`,
       `- 生成记录ID: ${gen.id}`,
