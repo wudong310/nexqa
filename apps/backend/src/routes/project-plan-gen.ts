@@ -189,10 +189,20 @@ export const projectPlanGenRoutes = new Hono()
     );
 
     try {
+      // 获取 OpenClaw Gateway token
+      // 优先级：1. settings.openclawToken  2. 环境变量 OPENCLAW_GATEWAY_TOKEN
+      const settingsRaw = await storage.readRaw("settings.json");
+      const settings = settingsRaw ? JSON.parse(settingsRaw) : {};
+      const token = settings.openclawToken || process.env.OPENCLAW_GATEWAY_TOKEN || "";
+
+      if (!token) {
+        log.warn("OpenClaw Gateway token 未配置，请在 settings.openclawToken 或 OPENCLAW_GATEWAY_TOKEN 中设置");
+      }
+
       // 创建 OpenClaw 客户端并启动 V2 生成
       const clientConfig: OpenClawClientConfig = {
         gatewayUrl: connection.gatewayUrl,
-        token: "", // shared-secret 从连接配置获取（实际使用时需补充）
+        token,
         timeout: connection.timeout?.chat ?? 30000,
       };
       const openclawClient = createOpenClawClient(clientConfig);
