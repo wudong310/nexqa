@@ -21,8 +21,15 @@ import type {
 } from "@nexqa/shared";
 import { PlanGenV2ResultSchema } from "@nexqa/shared";
 import { createLogger } from "./logger.js";
-import type { OpenClawBackendClient } from "./openclaw-client.js";
+import type {
+  OpenClawBackendClient,
+  SessionEvent,
+} from "./openclaw-client.js";
 import { storage } from "./storage.js";
+
+export interface EventBroadcaster {
+  broadcast: (event: unknown) => void;
+}
 
 // Re-export types for consumers
 export type { PlanGenerationV2, PlanGenV2Result, PlanGenV2Status };
@@ -49,12 +56,15 @@ export interface PlanGenV2Request {
 
 export class TestPlanGenV2Service {
   private log = createLogger("test-plan-gen-v2");
-  /** 内存存储（后续可改为持久化） */
-  private generations = new Map<string, PlanGenerationV2>();
   private openclawClient: OpenClawBackendClient;
+  private eventBroadcaster?: EventBroadcaster;
 
-  constructor(openclawClient: OpenClawBackendClient) {
+  constructor(
+    openclawClient: OpenClawBackendClient,
+    eventBroadcaster?: EventBroadcaster,
+  ) {
     this.openclawClient = openclawClient;
+    this.eventBroadcaster = eventBroadcaster;
   }
 
   /**
@@ -62,7 +72,7 @@ export class TestPlanGenV2Service {
    *
    * 创建生成记录，启动异步任务，立即返回 id + status。
    */
-  startGeneration(request: PlanGenV2Request): PlanGenerationV2 {
+  async startGeneration(request: PlanGenV2Request): Promise<PlanGenerationV2> {
     // 输入校验
     if (!request.projectId) {
       throw new Error("projectId 不能为空");
@@ -90,8 +100,11 @@ export class TestPlanGenV2Service {
       completedAt: null,
     };
 
-    this.generations.set(id, generation);
-    this.log.info(`方案生成已创建: id=${id}, projectId=${request.projectId}`);
+    // 持久化到 storage
+    await storage.write<PlanGenerationV2>("plan-generations-v2", id, generation);
+    this.log.info(
+      `方案生成已创建: id=${id}, projectId=${request.projectId}`,
+    );
 
     // 启动异步执行（不阻塞）
     this.executeGeneration(id).catch((err) => {
@@ -107,27 +120,26 @@ export class TestPlanGenV2Service {
   /**
    * 查询生成状态和结果
    */
-  getGeneration(id: string): PlanGenerationV2 | null {
-    return this.generations.get(id) ?? null;
+  async getGeneration(id: string): Promise<PlanGenerationV2 | null> {
+    return storage.read<PlanGenerationV2>("plan-generations-v2", id);
   }
 
   /**
-   * 内部：执行方案生成（sendAndWait 同步模式）
+   * 内部：执行方案生成（异步 session 模式）
    *
-   * 重构后：
-   * 1. 更新状态为 generating
+   * 流程：
+   * 1. 从 storage 读取并更新状态为 generating
    * 2. 验证项目存在性
-   * 3. 构造 Agent 消息（含 projectId, generationId, intent, scope）
-   * 4. 通过 OpenClaw sendAndWait 同步等待 Agent 返回 JSON
-   * 5. 解析并校验返回结果，更新 generation 状态
-   *
-   * 错误处理：
-   * - 连接失败 / 超时 → 标记 generation 为 failed
-   * - Agent 返回格式错误 → 标记 generation 为 failed
-   * - Zod 校验失败 → 标记 generation 为 failed
+   * 3. 订阅 session 事件流（用于流式推送）
+   * 4. 创建 session 并指定 agentId
+   * 5. 等待完成（通过事件回调检测终态）
+   * 6. 取消订阅并断开连接
    */
   private async executeGeneration(id: string): Promise<void> {
-    const gen = this.generations.get(id);
+    const gen = await storage.read<PlanGenerationV2>(
+      "plan-generations-v2",
+      id,
+    );
     if (!gen) {
       this.log.error(`生成记录不存在: id=${id}`);
       return;
@@ -135,7 +147,10 @@ export class TestPlanGenV2Service {
 
     // 更新状态 → generating
     gen.status = "generating";
+    await storage.write("plan-generations-v2", id, gen);
     this.log.info(`开始生成: id=${id}, intent="${gen.intent}"`);
+
+    let unsubscribe: (() => void) | null = null;
 
     try {
       // 验证项目存在性
@@ -146,58 +161,47 @@ export class TestPlanGenV2Service {
 
       // 构造 Agent 消息
       const taskMessage = this.buildAgentTaskMessage(gen, project);
+      const sessionKey = `plan-gen-${gen.id}`;
 
       // 连接 Gateway
       await this.openclawClient.connect();
 
-      // sendAndWait 同步等待 Agent 返回（5分钟超时）
-      const reply = await this.openclawClient.sendAndWait(taskMessage, {
-        timeout: 300_000, // 5分钟，Agent 需多步查询+推理
-        sessionKey: `agent:nexqa:plan-gen-${gen.id}`,
+      // 订阅 session 事件（流式推送）
+      unsubscribe = await this.openclawClient.subscribeToSession({
+        key: sessionKey,
+        onEvent: (event) => {
+          this.handleAgentEvent(id, event);
+        },
       });
 
-      // 调试日志：打印 reply 原文（截断 4KB）
-      const replyPreview = reply.length > 4000 ? reply.slice(0, 4000) + '...[truncated]' : reply;
-      this.log.info(`Agent 返回原文: generationId=${gen.id}, replyLength=${reply.length}, reply=${replyPreview}`);
+      // 创建 session 并指定 agentId
+      const { sessionId } = await this.openclawClient.createSession({
+        agentId: "nexqa", // 使用已注册的 nexqa agent
+        key: sessionKey,
+        initialMessage: taskMessage, // 创建时直接发消息
+      });
 
-      // 断开连接
-      this.openclawClient.disconnect();
+      this.log.info(
+        `Session 已创建: sessionId=${sessionId}, agentId=nexqa`,
+      );
 
-      // 解析 JSON
-      let parsed: unknown;
-      try {
-        parsed = extractJson(reply);
-      } catch (extractErr) {
-        // 解析失败时打印更详细的错误信息
-        this.log.error(
-          `JSON 解析失败: generationId=${gen.id}, error=${extractErr instanceof Error ? extractErr.message : String(extractErr)}, replyStart=${reply.slice(0, 200)}, replyEnd=${reply.slice(-200)}`,
-        );
-        throw extractErr;
-      }
-
-      // Zod 校验
-      const result = PlanGenV2ResultSchema.safeParse(parsed);
-      if (!result.success) {
-        const errorMsg = `方案格式校验失败: ${result.error.message}`;
-        this.log.error(errorMsg);
-        gen.status = "failed";
-        gen.error = errorMsg;
-        gen.completedAt = new Date().toISOString();
-        return;
-      }
-
-      // 成功
-      gen.status = "completed";
-      gen.result = result.data;
-      gen.completedAt = new Date().toISOString();
-      this.log.info(`方案生成完成: id=${id}`);
+      // 等待最终结果（通过事件回调更新，这里只等待完成信号）
+      await this.waitForCompletion(id, 300_000);
     } catch (err) {
       gen.status = "failed";
       gen.error = this.classifyError(err);
       gen.completedAt = new Date().toISOString();
-      this.log.error(`方案生成失败: id=${id}, error="${gen.error}"`);
+      await storage.write("plan-generations-v2", id, gen);
 
-      // 确保断开连接
+      this.log.error(
+        `方案生成失败: id=${id}, error="${gen.error}"`,
+      );
+    } finally {
+      // 取消订阅
+      if (unsubscribe) {
+        unsubscribe();
+      }
+      // 断开连接
       try {
         this.openclawClient.disconnect();
       } catch {
@@ -311,6 +315,127 @@ export class TestPlanGenV2Service {
       | string
       | undefined;
     return baseUrl || process.env.NEXQA_API_URL || "http://localhost:4700";
+  }
+
+  /**
+   * 等待 generation 进入终态
+   */
+  private async waitForCompletion(
+    generationId: string,
+    timeoutMs: number,
+  ): Promise<void> {
+    const start = Date.now();
+    // 简单轮询 storage（避免在内存里维护 Promise/Map）
+    while (Date.now() - start < timeoutMs) {
+      const gen = await storage.read<PlanGenerationV2>(
+        "plan-generations-v2",
+        generationId,
+      );
+      if (!gen) throw new Error("生成记录不存在");
+      if (gen.status === "completed" || gen.status === "failed") return;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    throw new Error(`等待完成超时 (${timeoutMs}ms)`);
+  }
+
+  /**
+   * 处理 Agent 事件：转发给前端 + 处理终态持久化
+   */
+  private handleAgentEvent(generationId: string, event: SessionEvent): void {
+    // 转发到前端 WS
+    this.eventBroadcaster?.broadcast({
+      type: "plan-gen-v2:event",
+      payload: {
+        generationId,
+        event: event.state as
+          | "delta"
+          | "tool_use"
+          | "tool_result"
+          | "final"
+          | "error",
+        data: {
+          text: this.extractText(event.message),
+          toolCalls: event.toolCalls,
+        },
+        timestamp: new Date().toISOString(),
+      },
+    });
+
+    // 终态处理（异步落库）
+    if (event.state === "final") {
+      void this.persistFinal(generationId, event.message);
+      return;
+    }
+    if (event.state === "error") {
+      void this.persistError(generationId, event);
+    }
+  }
+
+  private async persistFinal(
+    generationId: string,
+    message: unknown,
+  ): Promise<void> {
+    const gen = await storage.read<PlanGenerationV2>(
+      "plan-generations-v2",
+      generationId,
+    );
+    if (!gen) return;
+
+    const text = this.extractText(message);
+    let parsed: unknown;
+    try {
+      parsed = extractJson(text);
+    } catch (err) {
+      gen.status = "failed";
+      gen.error = `JSON 解析失败: ${err instanceof Error ? err.message : String(err)}`;
+      gen.completedAt = new Date().toISOString();
+      await storage.write("plan-generations-v2", generationId, gen);
+      return;
+    }
+
+    const result = PlanGenV2ResultSchema.safeParse(parsed);
+    if (!result.success) {
+      gen.status = "failed";
+      gen.error = `方案格式校验失败: ${result.error.message}`;
+      gen.completedAt = new Date().toISOString();
+      await storage.write("plan-generations-v2", generationId, gen);
+      return;
+    }
+
+    gen.status = "completed";
+    gen.result = result.data;
+    gen.error = null;
+    gen.completedAt = new Date().toISOString();
+    await storage.write("plan-generations-v2", generationId, gen);
+  }
+
+  private async persistError(
+    generationId: string,
+    event: SessionEvent,
+  ): Promise<void> {
+    const gen = await storage.read<PlanGenerationV2>(
+      "plan-generations-v2",
+      generationId,
+    );
+    if (!gen) return;
+    gen.status = "failed";
+    gen.error = `Agent 错误: ${this.extractText(event.message) || "未知错误"}`;
+    gen.completedAt = new Date().toISOString();
+    await storage.write("plan-generations-v2", generationId, gen);
+  }
+
+  private extractText(message: unknown): string {
+    if (!message || typeof message !== "object") return "";
+    const m = message as Record<string, unknown>;
+    if (Array.isArray(m.content)) {
+      return (m.content as Array<Record<string, unknown>>)
+        .filter((c) => c.type === "text" && typeof c.text === "string")
+        .map((c) => c.text as string)
+        .join("");
+    }
+    if (typeof m.text === "string") return m.text;
+    if (typeof m.content === "string") return m.content;
+    return "";
   }
 
   /**

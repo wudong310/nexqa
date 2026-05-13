@@ -30,6 +30,7 @@ import type {
   StartPlanGenV2Response,
 } from "@/types/plan-gen-v2";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { usePlanGenV2WS } from "@/hooks/usePlanGenV2WS";
 import {
   CheckCircle,
   Lightbulb,
@@ -37,7 +38,7 @@ import {
   Sparkles,
   XCircle,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 // ── Types ───────────────────────────────────────────
@@ -71,6 +72,18 @@ export function PlanGenV2Dialog({
   const [result, setResult] = useState<PlanGenV2Result | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [phase, setPhase] = useState<"input" | "generating" | "completed" | "failed">("input");
+
+  // ── WebSocket streaming logs ──────────────────────
+
+  const { logs } = usePlanGenV2WS(generationId);
+  const logsEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom when new logs arrive
+  useEffect(() => {
+    if (logsEndRef.current && logs.length > 0) {
+      logsEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [logs]);
 
   // ── Start generation mutation ──────────────────────
 
@@ -235,13 +248,55 @@ export function PlanGenV2Dialog({
 
         {/* ── Generating Phase ── */}
         {phase === "generating" && (
-          <div className="flex flex-col items-center justify-center py-12 space-y-4">
-            <Loader2 className="h-8 w-8 animate-spin text-violet-500" />
-            <div className="text-center space-y-1">
+          <div className="space-y-3 py-2">
+            <div className="flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin text-violet-500" />
               <p className="text-sm font-medium">正在生成测试方案...</p>
-              <p className="text-xs text-muted-foreground">
-                OpenClaw Agent 正在分析项目 API 并设计测试策略
-              </p>
+            </div>
+
+            {/* Streaming logs */}
+            <div className="font-mono text-xs bg-muted/30 rounded-md p-3 max-h-[240px] overflow-y-auto space-y-1">
+              {logs.length === 0 ? (
+                <p className="text-muted-foreground">等待 Agent 响应...</p>
+              ) : (
+                logs.map((log, i) => {
+                  switch (log.event) {
+                    case "delta":
+                      return (
+                        <p key={i} className="text-muted-foreground">
+                          {log.text}
+                        </p>
+                      );
+                    case "tool_use":
+                      return (
+                        <p key={i} className="text-amber-600 dark:text-amber-400">
+                          🔧 调用 <span className="font-semibold">{log.text}</span>
+                        </p>
+                      );
+                    case "tool_result":
+                      return (
+                        <p key={i} className="text-emerald-600 dark:text-emerald-400">
+                          ✅ <span className="font-semibold">{log.text}</span> 完成
+                        </p>
+                      );
+                    case "error":
+                      return (
+                        <p key={i} className="text-destructive">
+                          ❌ {log.text}
+                        </p>
+                      );
+                    case "final":
+                      return (
+                        <p key={i} className="text-violet-600 dark:text-violet-400 font-medium">
+                          ✓ {log.text}
+                        </p>
+                      );
+                    default:
+                      return null;
+                  }
+                })
+              )}
+              <div ref={logsEndRef} />
             </div>
           </div>
         )}

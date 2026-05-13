@@ -44,6 +44,17 @@ interface ChatWaiter {
   idempotencyKey: string;
 }
 
+/** Session 事件 */
+export interface SessionEvent {
+  state: string;
+  message?: unknown;
+  runId?: string;
+  toolCalls?: unknown;
+}
+
+/** Session 事件处理器 */
+export type SessionEventHandler = (event: SessionEvent) => void;
+
 // ─── Client ───────────────────────────────────────────────────────────────────
 
 export class OpenClawBackendClient {
@@ -60,6 +71,10 @@ export class OpenClawBackendClient {
   private pendingRequests = new Map<string, PendingRequest>();
   /** 用于等待 chat 完整回复 */
   private chatWaiters = new Map<string, ChatWaiter>();
+  /** Session 事件处理器 */
+  private sessionEventHandlers = new Map<string, SessionEventHandler>();
+  /** 活跃订阅 */
+  private activeSubscriptions = new Map<string, boolean>();
 
   constructor(config: OpenClawClientConfig) {
     this.config = {
@@ -145,6 +160,10 @@ export class OpenClawBackendClient {
       waiter.reject(new Error("连接已断开"));
     }
     this.chatWaiters.clear();
+
+    // 清理订阅
+    this.sessionEventHandlers.clear();
+    this.activeSubscriptions.clear();
 
     // 清理 connect 生命周期回调
     if (this.connectReject) {
@@ -366,6 +385,26 @@ export class OpenClawBackendClient {
         return;
       }
 
+      // 处理 session 消息事件
+      if (event === "session.message") {
+        const payload = frame.payload as Record<string, unknown>;
+        const sessionKey = payload.sessionKey as string | undefined;
+
+        // 调用注册的事件处理器
+        if (sessionKey) {
+          const handler = this.sessionEventHandlers.get(sessionKey);
+          if (handler) {
+            handler({
+              state: payload.state as string,
+              message: payload.message,
+              runId: payload.runId as string,
+              toolCalls: payload.toolCalls,
+            });
+          }
+        }
+        return;
+      }
+
       // tick 心跳 - 忽略
       if (event === "tick") return;
 
@@ -507,17 +546,21 @@ export class OpenClawBackendClient {
     this.ws.send(raw);
   }
 
-  // ─── Spawn Session ───────────────────────────────────────────────────────────
+  // ─── Session 管理 ────────────────────────────────────────────────────────────
 
   /**
-   * 启动 Agent session（异步，不等待完成）
+   * 创建 Agent session
    *
-   * 发送 session.spawn 请求到 Gateway，Gateway 创建新 session 并启动 Agent。
-   * Agent 完成后通过 PUT 路由回写结果，不需要等待。
+   * @param options.agentId - Agent ID（如 "nexqa"）
+   * @param options.key - Session key（如 "plan-gen-{uuid}"）
+   * @param options.initialMessage - 初始消息（可选）
+   * @returns sessionId 和 sessionKey
    */
-  async spawnSession(
-    options: SpawnSessionOptions,
-  ): Promise<{ sessionId: string }> {
+  async createSession(options: {
+    agentId: string;
+    key: string;
+    initialMessage?: string;
+  }): Promise<{ sessionId: string; sessionKey: string }> {
     if (!this.isConnected) {
       await this.connect();
     }
@@ -527,14 +570,65 @@ export class OpenClawBackendClient {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pendingRequests.delete(reqId);
-        reject(new Error("spawn session 请求超时"));
+        reject(new Error("createSession 请求超时"));
       }, 15_000);
 
       this.pendingRequests.set(reqId, {
         resolve: (payload) => {
           clearTimeout(timer);
-          const p = payload as { sessionId?: string } | undefined;
-          resolve({ sessionId: p?.sessionId ?? reqId });
+          const p = payload as { sessionId?: string; key?: string } | undefined;
+          resolve({
+            sessionId: p?.sessionId ?? reqId,
+            sessionKey: p?.key ?? options.key,
+          });
+        },
+        reject: (err) => {
+          clearTimeout(timer);
+          reject(err);
+        },
+        timer,
+      });
+
+      const params: Record<string, unknown> = {
+        agentId: options.agentId,
+        key: options.key,
+      };
+      if (options.initialMessage) {
+        params.message = options.initialMessage;
+      }
+
+      this.sendRaw({
+        type: "req",
+        id: reqId,
+        method: "sessions.create",
+        params,
+      });
+    });
+  }
+
+  /**
+   * 向已有 session 发送消息
+   */
+  async sendToSession(options: {
+    key: string;
+    message: string;
+  }): Promise<void> {
+    if (!this.isConnected) {
+      await this.connect();
+    }
+
+    const reqId = randomUUID();
+
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingRequests.delete(reqId);
+        reject(new Error("sendToSession 请求超时"));
+      }, 10_000);
+
+      this.pendingRequests.set(reqId, {
+        resolve: () => {
+          clearTimeout(timer);
+          resolve();
         },
         reject: (err) => {
           clearTimeout(timer);
@@ -546,29 +640,70 @@ export class OpenClawBackendClient {
       this.sendRaw({
         type: "req",
         id: reqId,
-        method: "session.spawn",
+        method: "sessions.send",
         params: {
-          skill: options.skill,
+          key: options.key,
           message: options.message,
-          meta: options.meta,
-          timeout: options.timeout ?? 300_000,
         },
       });
     });
   }
-}
 
-// ─── Types (Spawn Session) ─────────────────────────────────────────────────────
+  /**
+   * 订阅 session 消息事件流
+   *
+   * @param options.key - Session key
+   * @param options.onEvent - 事件回调
+   * @returns unsubscribe 函数
+   */
+  async subscribeToSession(options: {
+    key: string;
+    onEvent: SessionEventHandler;
+  }): Promise<() => void> {
+    if (!this.isConnected) {
+      await this.connect();
+    }
 
-export interface SpawnSessionOptions {
-  /** 指定 SKILL 名称 */
-  skill: string;
-  /** Agent 启动消息 */
-  message: string;
-  /** 元数据（透传给 session） */
-  meta?: Record<string, unknown>;
-  /** session 超时（ms），默认 300_000（5分钟） */
-  timeout?: number;
+    const subscriptionId = randomUUID();
+
+    // 发送订阅请求
+    const reqId = randomUUID();
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingRequests.delete(reqId);
+        reject(new Error("subscribe 请求超时"));
+      }, 10_000);
+
+      this.pendingRequests.set(reqId, {
+        resolve: () => {
+          clearTimeout(timer);
+          this.activeSubscriptions.set(subscriptionId, true);
+          resolve();
+        },
+        reject: (err) => {
+          clearTimeout(timer);
+          reject(err);
+        },
+        timer,
+      });
+
+      this.sendRaw({
+        type: "req",
+        id: reqId,
+        method: "sessions.messages.subscribe",
+        params: { key: options.key },
+      });
+    });
+
+    // 注册事件处理器
+    this.sessionEventHandlers.set(options.key, options.onEvent);
+
+    // 返回 unsubscribe 函数
+    return () => {
+      this.activeSubscriptions.delete(subscriptionId);
+      this.sessionEventHandlers.delete(options.key);
+    };
+  }
 }
 
 // ─── 工厂函数 ──────────────────────────────────────────────────────────────────

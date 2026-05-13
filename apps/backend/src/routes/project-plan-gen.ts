@@ -215,7 +215,7 @@ export const projectPlanGenRoutes = new Hono()
         scope: undefined,
       };
 
-      const generation = v2Service.startGeneration(v2Request);
+      const generation = await v2Service.startGeneration(v2Request);
 
       return c.json({
         id: generation.id,

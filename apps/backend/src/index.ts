@@ -34,7 +34,20 @@ import { gitSourceRoutes } from "./routes/git-sources.js";
 import { scanRoutes } from "./routes/scan.js";
 import { planGenV2ProjectRoutes, planGenV2PollRoutes } from "./routes/plan-gen-v2.js";
 
-type Env = { Variables: { traceId: string } };
+type Env = { Variables: { traceId: string; broadcaster?: { broadcast: (event: unknown) => void } } };
+
+// ── 前端 WebSocket 连接管理 ────────────────────────────────
+// 用于向前端推送 Agent 事件（plan-gen-v2 流式日志等）
+const frontendWsClients = new Set<WsWebSocket>();
+
+function broadcastToFrontend(event: unknown): void {
+  const message = JSON.stringify(event);
+  for (const client of frontendWsClients) {
+    if (client.readyState === WsWebSocket.OPEN) {
+      client.send(message);
+    }
+  }
+}
 
 const app = new Hono<Env>();
 
@@ -44,6 +57,7 @@ app.use("*", cors({ origin: "http://localhost:5173" }));
 app.use("*", async (c, next) => {
   const traceId = c.req.header("x-trace-id") || randomUUID().slice(0, 8);
   c.set("traceId", traceId);
+  c.set("broadcaster", { broadcast: broadcastToFrontend });
   c.header("x-trace-id", traceId);
   await next();
 });
@@ -107,6 +121,31 @@ const wsServer = new WebSocketServer({ noServer: true });
 
 server.on("upgrade", (req, socket, head) => {
   const url = new URL(req.url || "/", `http://localhost:${port}`);
+
+  // ── 前端 WS 连接：/nexqa/ws
+  if (url.pathname === "/nexqa/ws") {
+    wsServer.handleUpgrade(req, socket, head, (ws) => {
+      frontendWsClients.add(ws);
+      console.log(
+        `[ws] Frontend client connected, total: ${frontendWsClients.size}`,
+      );
+
+      ws.on("close", () => {
+        frontendWsClients.delete(ws);
+        console.log(
+          `[ws] Frontend client disconnected, total: ${frontendWsClients.size}`,
+        );
+      });
+
+      ws.on("error", (err) => {
+        console.error(`[ws] Frontend client error:`, err.message);
+        frontendWsClients.delete(ws);
+      });
+    });
+    return;
+  }
+
+  // ── OpenClaw Gateway WS proxy
   if (url.pathname !== "/nexqa/api/openclaw/ws-proxy") {
     socket.destroy();
     return;

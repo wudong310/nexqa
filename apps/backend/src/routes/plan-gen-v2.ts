@@ -57,13 +57,14 @@ const serviceCache = new Map<string, TestPlanGenV2Service>();
 function getOrCreateService(
   gatewayUrl: string,
   token: string,
+  broadcaster?: { broadcast: (event: unknown) => void },
 ): TestPlanGenV2Service {
   const cacheKey = `${gatewayUrl}::${token}`;
   const cached = serviceCache.get(cacheKey);
   if (cached) return cached;
 
   const client = createOpenClawClient({ gatewayUrl, token });
-  const service = new TestPlanGenV2Service(client);
+  const service = new TestPlanGenV2Service(client, broadcaster);
   serviceCache.set(cacheKey, service);
   return service;
 }
@@ -119,10 +120,11 @@ export const planGenV2ProjectRoutes = new Hono().post(
     }
 
     // 5. 获取/创建 service 实例并启动生成
-    const service = getOrCreateService(conn.gatewayUrl, token);
+    const broadcaster = (c.var as unknown as { broadcaster?: { broadcast: (event: unknown) => void } }).broadcaster;
+    const service = getOrCreateService(conn.gatewayUrl, token, broadcaster);
 
     try {
-      const generation = service.startGeneration({
+      const generation = await service.startGeneration({
         projectId,
         intent: body.intent,
         scope: body.scope,
@@ -156,12 +158,8 @@ export const planGenV2ProjectRoutes = new Hono().post(
  *
  * 遍历所有 service 实例（按 connectionId 分组），返回第一个匹配的 generation。
  */
-function findGeneration(id: string): PlanGenerationV2 | null {
-  for (const service of serviceCache.values()) {
-    const gen = service.getGeneration(id);
-    if (gen) return gen;
-  }
-  return null;
+async function findGeneration(id: string): Promise<PlanGenerationV2 | null> {
+  return storage.read<PlanGenerationV2>("plan-generations-v2", id);
 }
 
 /** 轮询路由：GET /plan-generations-v2/:id + PUT result/error */
@@ -169,7 +167,7 @@ export const planGenV2PollRoutes = new Hono()
   .get("/plan-generations-v2/:id", async (c) => {
     const id = c.req.param("id");
 
-    const gen = findGeneration(id);
+    const gen = await findGeneration(id);
     if (!gen) {
       return c.json({ error: "生成记录不存在" }, 404);
     }
@@ -221,7 +219,7 @@ export const planGenV2PollRoutes = new Hono()
     }
 
     // 3. 查找 generation 记录
-    const generation = findGeneration(id);
+    const generation = await findGeneration(id);
     if (!generation) {
       return c.json({ error: "生成记录不存在" }, 404);
     }
@@ -231,11 +229,13 @@ export const planGenV2PollRoutes = new Hono()
       log.warn(`generation ${id} 已终态 (${generation.status})，覆写结果`);
     }
 
-    // 5. 更新记录
+    // 5. 更新记录（持久化）
     generation.status = "completed";
     generation.result = parseResult.data;
     generation.completedAt = new Date().toISOString();
     generation.error = null;
+
+    await storage.write("plan-generations-v2", id, generation);
 
     log.info(`方案结果已回写: id=${id}, plan="${parseResult.data.plan.name}"`);
 
@@ -255,7 +255,7 @@ export const planGenV2PollRoutes = new Hono()
     const body = await c.req.json().catch(() => null);
     const errorMsg = body?.error || "未知错误";
 
-    const generation = findGeneration(id);
+    const generation = await findGeneration(id);
     if (!generation) {
       return c.json({ error: "生成记录不存在" }, 404);
     }
@@ -263,6 +263,8 @@ export const planGenV2PollRoutes = new Hono()
     generation.status = "failed";
     generation.error = String(errorMsg);
     generation.completedAt = new Date().toISOString();
+
+    await storage.write("plan-generations-v2", id, generation);
 
     log.info(`方案生成标记失败: id=${id}, error="${errorMsg}"`);
 
