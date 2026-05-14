@@ -385,6 +385,7 @@ export class OpenClawBackendClient {
       // 这是 Agent 流式输出的核心通道，不需要订阅特定 session
       if (event === "chat") {
         this.handleChatStreamEvent(frame.payload as Record<string, unknown>);
+        this.handleChatEvent(frame.payload as Record<string, unknown>);
         return;
       }
 
