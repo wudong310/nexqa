@@ -68,6 +68,13 @@ export class TestPlanGenV2Service {
   }
 
   /**
+   * Bug 11 修复：更新 broadcaster（用于 serviceCache 场景）
+   */
+  updateBroadcaster(broadcaster: EventBroadcaster): void {
+    this.eventBroadcaster = broadcaster;
+  }
+
+  /**
    * 启动方案生成
    *
    * 创建生成记录，启动异步任务，立即返回 id + status。
@@ -166,6 +173,7 @@ export class TestPlanGenV2Service {
       // 连接 Gateway
       await this.openclawClient.connect();
 
+      // Bug 6 修复：先订阅，等确认后再创建 session
       // 订阅 session 事件（流式推送）
       unsubscribe = await this.openclawClient.subscribeToSession({
         key: sessionKey,
@@ -173,6 +181,9 @@ export class TestPlanGenV2Service {
           this.handleAgentEvent(id, event);
         },
       });
+
+      // Bug 6 修复：订阅确认后增加 100ms delay，确保事件处理器已就绪
+      await new Promise((r) => setTimeout(r, 100));
 
       // 创建 session 并指定 agentId
       const { sessionId } = await this.openclawClient.createSession({
@@ -197,6 +208,19 @@ export class TestPlanGenV2Service {
         `方案生成失败: id=${id}, error="${gen.error}"`,
       );
     } finally {
+      // Bug 5/8 修复：不在 waitForCompletion 失败后立即 disconnect
+      // 先检查 generation 状态，如果是 generating 才标记 failed
+      const finalGen = await storage.read<PlanGenerationV2>(
+        "plan-generations-v2",
+        id,
+      );
+      if (finalGen && finalGen.status === "generating") {
+        finalGen.status = "failed";
+        finalGen.error = "生成过程中断";
+        finalGen.completedAt = new Date().toISOString();
+        await storage.write("plan-generations-v2", id, finalGen);
+      }
+
       // 取消订阅
       if (unsubscribe) {
         unsubscribe();
@@ -213,7 +237,7 @@ export class TestPlanGenV2Service {
   /**
    * 构造 Agent 消息
    *
-   * 包含项目信息、generationId、用户意图、范围、API 地址、SKILL 使用指引、输出格式要求。
+   * Bug 7/9 修复：明确指示 Agent 只通过 submit-plan.ts 提交结果
    */
   private buildAgentTaskMessage(
     gen: PlanGenerationV2,
@@ -221,8 +245,6 @@ export class TestPlanGenV2Service {
   ): string {
     const parts: string[] = [
       `## 测试方案生成任务`,
-      ``,
-      `**重要：直接返回 JSON，不要任何解释性文字，不要 markdown 代码块。**`,
       ``,
       `- 项目ID: ${gen.projectId}`,
       `- 项目名称: ${project.name}`,
@@ -259,47 +281,16 @@ export class TestPlanGenV2Service {
     );
 
     parts.push("");
-    parts.push(`## 输出格式要求`);
-    parts.push(`返回纯 JSON，不要 markdown 代码块，不要任何额外文字。`);
-    parts.push(`格式为 PlanGenV2Result：`);
-    parts.push("```json");
-    parts.push(`{
-  "parsedIntent": {
-    "type": "string",
-    "scope": "string",
-    "urgency": "normal" | "quick"
-  },
-  "plan": {
-    "name": "string",
-    "description": "string",
-    "stages": [
-      {
-        "name": "string",
-        "order": 0,
-        "selection": {},
-        "criteria": {
-          "minPassRate": 0.9,
-          "maxP0Fails": 0,
-          "maxP1Fails": 5
-        },
-        "gate": false
-      }
-    ],
-    "execution": {
-      "concurrency": 3,
-      "retryOnFail": 0,
-      "timeoutMs": 30000,
-      "stopOnGateFail": true
-    },
-    "criteria": {
-      "minPassRate": 0.95,
-      "maxP0Fails": 0,
-      "maxP1Fails": 3
-    },
-    "reasoning": "string"
-  }
-}`);
-    parts.push("```");
+    parts.push(`## 结果提交方式`);
+    parts.push(
+      `**重要：完成推理后，必须通过 submit-plan.ts 脚本提交结果，不要直接返回 JSON。**`,
+    );
+    parts.push(
+      `示例：echo '<PlanGenV2Result JSON>' | npx tsx ~/Studio/skills/tools/nexqa/scripts/submit-plan.ts --base-url ${this.getNexqaApiUrl(project)} --generation-id ${gen.id}`,
+    );
+    parts.push(
+      `提交成功后，消息最后只需返回一句“方案已提交”即可。`,
+    );
 
     return parts.join("\n");
   }
@@ -340,9 +331,33 @@ export class TestPlanGenV2Service {
 
   /**
    * 处理 Agent 事件：转发给前端 + 处理终态持久化
+   *
+   * Bug 3 修复：广播字段名对齐前端期望
+   * 前端 usePlanGenV2WS.ts 期望: data.text, data.toolName, data.toolInput, data.result
    */
   private handleAgentEvent(generationId: string, event: SessionEvent): void {
-    // 转发到前端 WS
+    // 提取文本和工具调用信息
+    const text = this.extractText(event.message);
+    const toolCalls = event.toolCalls as
+      | Array<{ name?: string; input?: unknown; result?: unknown }>
+      | undefined;
+
+    // 从 toolCalls 中提取第一个调用的信息（如果有）
+    let toolName: string | undefined;
+    let toolInput: Record<string, unknown> | undefined;
+    let toolResult: unknown;
+
+    if (toolCalls && toolCalls.length > 0) {
+      const firstCall = toolCalls[0];
+      toolName = firstCall.name;
+      toolInput =
+        firstCall.input && typeof firstCall.input === "object"
+          ? (firstCall.input as Record<string, unknown>)
+          : undefined;
+      toolResult = firstCall.result;
+    }
+
+    // 转发到前端 WS（字段名对齐前端期望）
     this.eventBroadcaster?.broadcast({
       type: "plan-gen-v2:event",
       payload: {
@@ -354,16 +369,21 @@ export class TestPlanGenV2Service {
           | "final"
           | "error",
         data: {
-          text: this.extractText(event.message),
-          toolCalls: event.toolCalls,
+          text,
+          toolName,
+          toolInput,
+          result: toolResult,
         },
         timestamp: new Date().toISOString(),
       },
     });
 
-    // 终态处理（异步落库）
+    // 终态处理：仅记录日志，不再从消息中解析 JSON
+    // Bug 7/9 修复：结果统一由 submit-plan.ts 通过 PUT 路由回写
     if (event.state === "final") {
-      void this.persistFinal(generationId, event.message);
+      this.log.info(
+        `Agent final 事件: generationId=${generationId}, text.length=${text.length}`,
+      );
       return;
     }
     if (event.state === "error") {
@@ -371,43 +391,10 @@ export class TestPlanGenV2Service {
     }
   }
 
-  private async persistFinal(
-    generationId: string,
-    message: unknown,
-  ): Promise<void> {
-    const gen = await storage.read<PlanGenerationV2>(
-      "plan-generations-v2",
-      generationId,
-    );
-    if (!gen) return;
-
-    const text = this.extractText(message);
-    let parsed: unknown;
-    try {
-      parsed = extractJson(text);
-    } catch (err) {
-      gen.status = "failed";
-      gen.error = `JSON 解析失败: ${err instanceof Error ? err.message : String(err)}`;
-      gen.completedAt = new Date().toISOString();
-      await storage.write("plan-generations-v2", generationId, gen);
-      return;
-    }
-
-    const result = PlanGenV2ResultSchema.safeParse(parsed);
-    if (!result.success) {
-      gen.status = "failed";
-      gen.error = `方案格式校验失败: ${result.error.message}`;
-      gen.completedAt = new Date().toISOString();
-      await storage.write("plan-generations-v2", generationId, gen);
-      return;
-    }
-
-    gen.status = "completed";
-    gen.result = result.data;
-    gen.error = null;
-    gen.completedAt = new Date().toISOString();
-    await storage.write("plan-generations-v2", generationId, gen);
-  }
+  /**
+   * Bug 7/9 修复：删除 persistFinal，结果统一由 submit-plan.ts 通过 PUT 路由回写
+   * 保留此注释以说明历史原因
+   */
 
   private async persistError(
     generationId: string,

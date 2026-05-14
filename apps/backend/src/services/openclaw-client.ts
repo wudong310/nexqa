@@ -380,12 +380,16 @@ export class OpenClawBackendClient {
     if (type === "event") {
       const event = frame.event as string;
 
+      // 处理 chat 事件（Gateway 流式进度广播）
+      // chat 事件包含 state: "delta"|"final"|"error"、runId、message
+      // 这是 Agent 流式输出的核心通道，不需要订阅特定 session
       if (event === "chat") {
-        this.handleChatEvent(frame.payload as Record<string, unknown>);
+        this.handleChatStreamEvent(frame.payload as Record<string, unknown>);
         return;
       }
 
-      // 处理 session 消息事件
+      // 处理 session 消息事件（transcript 更新，不含 state 字段）
+      // 保留此处理以兼容旧逻辑，但核心事件流已改为 chat 事件
       if (event === "session.message") {
         const payload = frame.payload as Record<string, unknown>;
         const sessionKey = payload.sessionKey as string | undefined;
@@ -420,6 +424,45 @@ export class OpenClawBackendClient {
     }
   }
 
+  /**
+   * 处理 chat 事件（Gateway 流式进度广播）
+   *
+   * Gateway 的 chat 事件是全局广播，payload 包含：
+   * - sessionKey: 关联的 session
+   * - state: "delta" | "final" | "error" | "aborted"
+   * - runId: 运行 ID
+   * - message: 消息内容
+   *
+   * 此方法按 sessionKey 过滤，查找对应的 sessionEventHandlers 并调用。
+   */
+  private handleChatStreamEvent(payload: Record<string, unknown>): void {
+    if (!payload) return;
+
+    const sessionKey = payload.sessionKey as string | undefined;
+    const state = payload.state as string;
+    const runId = payload.runId as string;
+    const message = payload.message;
+
+    // 按 sessionKey 查找事件处理器
+    if (!sessionKey) return;
+    const handler = this.sessionEventHandlers.get(sessionKey);
+    if (!handler) return;
+
+    // 构造 SessionEvent 并传递给 handler
+    const event: SessionEvent = {
+      state,
+      message,
+      runId,
+    };
+
+    handler(event);
+  }
+
+  /**
+   * 处理 chat 事件（用于 sendAndWait 的内部 waiter）
+   *
+   * 此方法用于处理 sendAndWait() 方法的流式响应收集。
+   */
   private handleChatEvent(payload: Record<string, unknown>): void {
     if (!payload) return;
 

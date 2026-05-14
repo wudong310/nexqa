@@ -61,7 +61,14 @@ function getOrCreateService(
 ): TestPlanGenV2Service {
   const cacheKey = `${gatewayUrl}::${token}`;
   const cached = serviceCache.get(cacheKey);
-  if (cached) return cached;
+
+  // Bug 11 修复：cached 实例存在时，更新其 broadcaster
+  if (cached) {
+    if (broadcaster) {
+      cached.updateBroadcaster(broadcaster);
+    }
+    return cached;
+  }
 
   const client = createOpenClawClient({ gatewayUrl, token });
   const service = new TestPlanGenV2Service(client, broadcaster);

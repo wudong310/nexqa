@@ -52,7 +52,7 @@ function broadcastToFrontend(event: unknown): void {
 const app = new Hono<Env>();
 
 app.use("*", logger());
-app.use("*", cors({ origin: "http://localhost:5173" }));
+app.use("*", cors({ origin: process.env.CORS_ORIGIN || "*" }));
 
 app.use("*", async (c, next) => {
   const traceId = c.req.header("x-trace-id") || randomUUID().slice(0, 8);
