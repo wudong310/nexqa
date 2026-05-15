@@ -38,6 +38,28 @@ export function usePlanGenRecords(projectId: string) {
   });
 }
 
+// ── Detail Query ───────────────────────────────────
+
+export function usePlanGenRecordDetail(generationId: string | null) {
+  return useQuery<PlanGenRecord & { logs?: LogEntry[] }>({
+    queryKey: ["plan-gen-record-detail", generationId],
+    queryFn: () => api.get(`/plan-generations-v2/${generationId}`),
+    enabled: !!generationId,
+    refetchInterval: (query) => {
+      // generating 状态时 3s 轮询，其他状态不轮询
+      const status = query.state.data?.status;
+      return status === "generating" ? 3000 : false;
+    },
+  });
+}
+
+/** 日志条目类型 */
+export interface LogEntry {
+  event: "delta" | "tool_use" | "tool_result" | "error" | "final";
+  text: string;
+  timestamp: string;
+}
+
 // ── Mutations ───────────────────────────────────────
 
 export function useAdoptPlanGen(projectId: string) {

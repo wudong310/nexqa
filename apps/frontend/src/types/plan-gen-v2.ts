@@ -7,6 +7,13 @@ export type PlanGenRecordStatus =
   | "completed_adopted"
   | "failed";
 
+/** 日志条目 */
+export interface LogEntry {
+  event: "delta" | "tool_use" | "tool_result" | "error" | "final";
+  text: string;
+  timestamp: string;
+}
+
 /** 生成记录（前端视图） */
 export interface PlanGenRecord {
   id: string;
@@ -23,6 +30,7 @@ export interface PlanGenRecord {
   adoptedPlanId?: string;
   startedAt: string;
   completedAt?: string;
+  logs?: LogEntry[];
 }
 
 /** 生成记录列表响应 */

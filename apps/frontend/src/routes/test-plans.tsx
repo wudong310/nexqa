@@ -1,5 +1,6 @@
 import { AdoptConfirmDialog } from "@/components/plan-gen-v2/AdoptConfirmDialog";
 import { FloatingProgressIndicator } from "@/components/plan-gen-v2/FloatingProgressIndicator";
+import { PlanGenRecordSheet } from "@/components/plan-gen-v2/PlanGenRecordSheet";
 import { PlanGenRecordsSection } from "@/components/plan-gen-v2/PlanGenRecordsSection";
 import { PlanGenV2Dialog, type ScopeChoice } from "@/components/plan-gen-v2/PlanGenV2Dialog";
 import { PlanCard } from "@/components/test-plans/plan-card";
@@ -33,7 +34,7 @@ import type { CreateTestPlan, TestPlan, Project } from "@nexqa/shared";
 import type { PlanGenRecord } from "@/types/plan-gen-v2";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { ClipboardList, Loader2, Wand2 } from "lucide-react";
+import { ClipboardList, History, Loader2, Wand2 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -156,6 +157,7 @@ export function TestPlansPage() {
   const [adoptingRecord, setAdoptingRecord] = useState<PlanGenRecord | null>(null);
   const [retryIntent, setRetryIntent] = useState<string | undefined>(undefined);
   const [retryScope, setRetryScope] = useState<ScopeChoice | undefined>(undefined);
+  const [recordSheetOpen, setRecordSheetOpen] = useState(false);
 
   // Queries & mutations
   const { data: project } = useQuery<Project>({
@@ -365,15 +367,26 @@ export function TestPlansPage() {
               创建可复用的测试执行配方
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setV2DialogOpen(true)}
-            className="gap-1.5 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-300 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/30"
-          >
-            <Wand2 className="h-3.5 w-3.5" />
-            ✨ AI 智能生成(V2)
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setRecordSheetOpen(true)}
+              className="gap-1.5"
+            >
+              <History className="h-3.5 w-3.5" />
+              生成记录
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setV2DialogOpen(true)}
+              className="gap-1.5 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-300 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/30"
+            >
+              <Wand2 className="h-3.5 w-3.5" />
+              ✨ AI 智能生成(V2)
+            </Button>
+          </div>
         </div>
 
         {/* AI Generation Records Section */}
@@ -501,6 +514,13 @@ export function TestPlansPage() {
         <FloatingProgressIndicator
           record={generatingRecord}
           onClick={() => setV2DialogOpen(true)}
+        />
+
+        {/* Plan Gen Record Sheet */}
+        <PlanGenRecordSheet
+          open={recordSheetOpen}
+          onOpenChange={setRecordSheetOpen}
+          projectId={projectId}
         />
       </div>
     </TooltipProvider>
