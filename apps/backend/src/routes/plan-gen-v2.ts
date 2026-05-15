@@ -6,9 +6,14 @@
  *   GET  /plan-generations-v2/:id          → 轮询生成状态（200）
  */
 
-import type { PlanGenerationV2, Project } from "@nexqa/shared";
-import { PlanGenV2ResultSchema } from "@nexqa/shared";
+import type { PlanGenerationV2, Project, TestPlan } from "@nexqa/shared";
+import {
+  AdoptPlanGenRequestSchema,
+  PlanGenV2ResultSchema,
+  PlanGenRecordStatusSchema,
+} from "@nexqa/shared";
 import { Hono } from "hono";
+import { v4 as uuid } from "uuid";
 import { z } from "zod";
 import { createLogger } from "../services/logger.js";
 import { createOpenClawClient } from "../services/openclaw-client.js";
@@ -78,10 +83,55 @@ function getOrCreateService(
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
-/** 项目级路由：POST /:projectId/plan-gen-v2 */
-export const planGenV2ProjectRoutes = new Hono().post(
-  "/:projectId/plan-gen-v2",
-  async (c) => {
+/** 项目级路由：POST /:projectId/plan-gen-v2 + GET /:projectId/plan-gen-v2/records */
+export const planGenV2ProjectRoutes = new Hono()
+  // ─── GET /:projectId/plan-gen-v2/records — 获取项目生成记录列表 ───────────
+  .get("/:projectId/plan-gen-v2/records", async (c) => {
+    const projectId = c.req.param("projectId");
+    const statusFilter = c.req.query("status");
+
+    // 1. 校验项目存在
+    const project = await storage.read<Project>("projects", projectId);
+    if (!project) {
+      return c.json({ error: "项目不存在", code: "PROJECT_NOT_FOUND" }, 404);
+    }
+
+    // 2. 获取所有生成记录
+    const allRecords = await storage.list<PlanGenerationV2>("plan-generations-v2");
+    let filtered = allRecords.filter((r) => r.projectId === projectId);
+
+    // 3. 状态兼容映射：completed → completed_pending, pending → generating
+    const mappedRecords = filtered.map((r) => {
+      let displayStatus = r.status;
+      if (r.status === "completed") {
+        displayStatus = r.adoptedPlanId ? "completed_adopted" : "completed_pending";
+      } else if (r.status === "pending") {
+        displayStatus = "generating";
+      }
+      return { ...r, status: displayStatus };
+    });
+
+    // 4. 可选状态筛选
+    if (statusFilter) {
+      const statusParse = PlanGenRecordStatusSchema.safeParse(statusFilter);
+      if (!statusParse.success) {
+        return c.json({ error: "无效的 status 参数" }, 400);
+      }
+      filtered = mappedRecords.filter((r) => r.status === statusFilter);
+    } else {
+      filtered = mappedRecords;
+    }
+
+    // 5. 按 startedAt 倒序
+    filtered.sort(
+      (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
+    );
+
+    return c.json({ records: filtered });
+  })
+
+  // ─── POST /:projectId/plan-gen-v2 — 触发生成 ───────────────────────────────
+  .post("/:projectId/plan-gen-v2", async (c) => {
     const log = createLogger("plan-gen-v2", c.req.header("x-trace-id"));
     const projectId = c.req.param("projectId");
 
@@ -179,26 +229,35 @@ export const planGenV2PollRoutes = new Hono()
       return c.json({ error: "生成记录不存在" }, 404);
     }
 
+    // 状态兼容映射
+    let displayStatus = gen.status;
+    if (gen.status === "completed") {
+      displayStatus = gen.adoptedPlanId ? "completed_adopted" : "completed_pending";
+    } else if (gen.status === "pending") {
+      displayStatus = "generating";
+    }
+
     // 根据状态返回不同结构
     switch (gen.status) {
       case "pending":
       case "generating":
         return c.json({
           id: gen.id,
-          status: gen.status,
+          status: displayStatus,
           progress:
             gen.status === "pending" ? "等待启动..." : "正在分析 API 变更...",
         });
       case "completed":
         return c.json({
           id: gen.id,
-          status: gen.status,
+          status: displayStatus,
           result: gen.result,
+          adoptedPlanId: gen.adoptedPlanId,
         });
       case "failed":
         return c.json({
           id: gen.id,
-          status: gen.status,
+          status: displayStatus,
           error: gen.error,
         });
     }
@@ -237,7 +296,8 @@ export const planGenV2PollRoutes = new Hono()
     }
 
     // 5. 更新记录（持久化）
-    generation.status = "completed";
+    // 注意：状态改为 completed_pending，表示待采纳
+    generation.status = "completed"; // 存储层保持 completed
     generation.result = parseResult.data;
     generation.completedAt = new Date().toISOString();
     generation.error = null;
@@ -276,4 +336,131 @@ export const planGenV2PollRoutes = new Hono()
     log.info(`方案生成标记失败: id=${id}, error="${errorMsg}"`);
 
     return c.json({ ok: true, id: generation.id, status: "failed" });
+  })
+
+  // ─── POST /plan-generations-v2/:id/adopt — 采纳生成结果 ──────────────────
+  .post("/plan-generations-v2/:id/adopt", async (c) => {
+    const log = createLogger("plan-gen-v2", c.req.header("x-trace-id"));
+    const id = c.req.param("id");
+
+    // 1. 查找生成记录
+    const generation = await findGeneration(id);
+    if (!generation) {
+      return c.json(
+        { error: "生成记录不存在", code: "GENERATION_NOT_FOUND" },
+        404,
+      );
+    }
+
+    // 2. 状态校验
+    if (
+      generation.status !== "completed" &&
+      generation.status !== "completed_pending"
+    ) {
+      return c.json(
+        { error: "生成未完成，无法采纳", code: "GENERATION_NOT_COMPLETED" },
+        400,
+      );
+    }
+
+    // 3. 检查是否已采纳
+    if (generation.adoptedPlanId) {
+      return c.json(
+        { error: "已被采纳，不能重复采纳", code: "GENERATION_ALREADY_ADOPTED" },
+        400,
+      );
+    }
+
+    // 4. 检查结果是否为空
+    if (!generation.result) {
+      return c.json(
+        { error: "结果为空，无法采纳", code: "GENERATION_RESULT_EMPTY" },
+        400,
+      );
+    }
+
+    // 5. 解析可选请求体
+    const rawBody = await c.req.json().catch(() => ({}));
+    const parseResult = AdoptPlanGenRequestSchema.safeParse(rawBody);
+    if (!parseResult.success) {
+      const messages = parseResult.error.errors.map((e) =>
+        e.path.length > 0 ? `${e.path.join(".")}: ${e.message}` : e.message,
+      );
+      return c.json({ error: messages.join("; ") }, 400);
+    }
+    const override = parseResult.data;
+
+    // 6. 从 result.plan 构建 TestPlan 对象
+    const planId = uuid();
+    const now = new Date().toISOString();
+    const planResult = generation.result.plan;
+
+    const testPlan: TestPlan = {
+      id: planId,
+      projectId: generation.projectId,
+      name: override.name || planResult.name,
+      description: override.description ?? planResult.description,
+      selection: {}, // 从 result.plan.stages 提取 selection（简化实现）
+      execution: {
+        environmentId: null,
+        stages: true,
+        concurrency: planResult.execution.concurrency,
+        retryOnFail: planResult.execution.retryOnFail,
+        timeoutMs: planResult.execution.timeoutMs,
+        stopOnGateFail: planResult.execution.stopOnGateFail,
+      },
+      criteria: {
+        minPassRate: planResult.criteria.minPassRate,
+        maxP0Fails: planResult.criteria.maxP0Fails,
+        maxP1Fails: planResult.criteria.maxP1Fails,
+      },
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    // 7. 写入 test-plans
+    await storage.write("test-plans", planId, testPlan);
+
+    // 8. 更新 generation 记录
+    generation.adoptedPlanId = planId;
+    await storage.write("plan-generations-v2", id, generation);
+
+    log.info(
+      `方案已采纳: generationId=${id}, planId=${planId}, name="${testPlan.name}"`,
+    );
+
+    return c.json({
+      planId,
+      plan: testPlan,
+    });
+  })
+
+  // ─── DELETE /plan-generations-v2/:id — 丢弃生成记录 ──────────────────────
+  .delete("/plan-generations-v2/:id", async (c) => {
+    const log = createLogger("plan-gen-v2", c.req.header("x-trace-id"));
+    const id = c.req.param("id");
+
+    // 1. 查找生成记录
+    const generation = await findGeneration(id);
+    if (!generation) {
+      return c.json(
+        { error: "生成记录不存在", code: "GENERATION_NOT_FOUND" },
+        404,
+      );
+    }
+
+    // 2. 检查是否已采纳
+    if (generation.adoptedPlanId) {
+      return c.json(
+        { error: "已采纳的记录不能丢弃", code: "GENERATION_ADOPTED" },
+        400,
+      );
+    }
+
+    // 3. 删除记录
+    await storage.remove("plan-generations-v2", id);
+
+    log.info(`生成记录已丢弃: id=${id}`);
+
+    return c.json({ ok: true });
   });
