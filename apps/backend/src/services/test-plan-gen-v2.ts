@@ -14,6 +14,7 @@
 
 import { randomUUID } from "node:crypto";
 import type {
+  LogEntry,
   PlanGenV2Result,
   PlanGenV2Status,
   PlanGenerationV2,
@@ -103,6 +104,7 @@ export class TestPlanGenV2Service {
       openclawConnectionId: request.openclawConnectionId,
       result: null,
       error: null,
+      logs: [],
       startedAt: now,
       completedAt: null,
     };
@@ -196,8 +198,14 @@ export class TestPlanGenV2Service {
         `Session 已创建: sessionId=${sessionId}, agentId=nexqa`,
       );
 
-      // 等待最终结果（通过事件回调更新，这里只等待完成信号）
-      await this.waitForCompletion(id, 300_000);
+      // Bug 修复：不再阻塞等待完成，Agent 会通过 PUT /result 或 PUT /error 回写状态
+      // 设置 30 分钟后自动清理（断开连接）
+      setTimeout(
+        () => {
+          this.cleanupSession(id, unsubscribe);
+        },
+        30 * 60 * 1000,
+      );
     } catch (err) {
       gen.status = "failed";
       gen.error = this.classifyError(err);
@@ -207,30 +215,39 @@ export class TestPlanGenV2Service {
       this.log.error(
         `方案生成失败: id=${id}, error="${gen.error}"`,
       );
-    } finally {
-      // Bug 5/8 修复：不在 waitForCompletion 失败后立即 disconnect
-      // 先检查 generation 状态，如果是 generating 才标记 failed
-      const finalGen = await storage.read<PlanGenerationV2>(
-        "plan-generations-v2",
-        id,
-      );
-      if (finalGen && finalGen.status === "generating") {
-        finalGen.status = "failed";
-        finalGen.error = "生成过程中断";
-        finalGen.completedAt = new Date().toISOString();
-        await storage.write("plan-generations-v2", id, finalGen);
-      }
+    }
+  }
 
-      // 取消订阅
-      if (unsubscribe) {
-        unsubscribe();
-      }
-      // 断开连接
-      try {
-        this.openclawClient.disconnect();
-      } catch {
-        // ignore
-      }
+  /**
+   * 清理 session（取消订阅 + 断开连接）
+   */
+  private async cleanupSession(
+    generationId: string,
+    unsubscribe: (() => void) | null,
+  ): Promise<void> {
+    const gen = await storage.read<PlanGenerationV2>(
+      "plan-generations-v2",
+      generationId,
+    );
+
+    // 如果还在 generating 状态，标记为 failed
+    if (gen && gen.status === "generating") {
+      gen.status = "failed";
+      gen.error = "生成超时（30分钟）";
+      gen.completedAt = new Date().toISOString();
+      await storage.write("plan-generations-v2", generationId, gen);
+      this.log.warn(`Session 超时清理: generationId=${generationId}`);
+    }
+
+    // 取消订阅
+    if (unsubscribe) {
+      unsubscribe();
+    }
+    // 断开连接
+    try {
+      this.openclawClient.disconnect();
+    } catch {
+      // ignore
     }
   }
 
@@ -309,28 +326,7 @@ export class TestPlanGenV2Service {
   }
 
   /**
-   * 等待 generation 进入终态
-   */
-  private async waitForCompletion(
-    generationId: string,
-    timeoutMs: number,
-  ): Promise<void> {
-    const start = Date.now();
-    // 简单轮询 storage（避免在内存里维护 Promise/Map）
-    while (Date.now() - start < timeoutMs) {
-      const gen = await storage.read<PlanGenerationV2>(
-        "plan-generations-v2",
-        generationId,
-      );
-      if (!gen) throw new Error("生成记录不存在");
-      if (gen.status === "completed" || gen.status === "failed") return;
-      await new Promise((r) => setTimeout(r, 500));
-    }
-    throw new Error(`等待完成超时 (${timeoutMs}ms)`);
-  }
-
-  /**
-   * 处理 Agent 事件：转发给前端 + 处理终态持久化
+   * 处理 Agent 事件：转发给前端 + 持久化日志 + 处理终态
    *
    * Bug 3 修复：广播字段名对齐前端期望
    * 前端 usePlanGenV2WS.ts 期望: data.text, data.toolName, data.toolInput, data.result
@@ -357,6 +353,18 @@ export class TestPlanGenV2Service {
       toolResult = firstCall.result;
     }
 
+    // 日志条目（用于持久化）
+    const logEntry: LogEntry = {
+      event: event.state as string,
+      text,
+      timestamp: new Date().toISOString(),
+    };
+
+    // 异步持久化日志
+    this.persistLog(generationId, logEntry).catch((err) => {
+      this.log.error(`日志持久化失败: generationId=${generationId}`, err);
+    });
+
     // 转发到前端 WS（字段名对齐前端期望）
     this.eventBroadcaster?.broadcast({
       type: "plan-gen-v2:event",
@@ -374,7 +382,7 @@ export class TestPlanGenV2Service {
           toolInput,
           result: toolResult,
         },
-        timestamp: new Date().toISOString(),
+        timestamp: logEntry.timestamp,
       },
     });
 
@@ -389,6 +397,29 @@ export class TestPlanGenV2Service {
     if (event.state === "error") {
       void this.persistError(generationId, event);
     }
+  }
+
+  /**
+   * 持久化日志条目
+   */
+  private async persistLog(
+    generationId: string,
+    logEntry: LogEntry,
+  ): Promise<void> {
+    const gen = await storage.read<PlanGenerationV2>(
+      "plan-generations-v2",
+      generationId,
+    );
+    if (!gen) return;
+
+    // 追加日志
+    if (!gen.logs) {
+      gen.logs = [];
+    }
+    gen.logs.push(logEntry);
+
+    // 写回 storage
+    await storage.write("plan-generations-v2", generationId, gen);
   }
 
   /**

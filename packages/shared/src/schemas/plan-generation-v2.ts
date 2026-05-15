@@ -1,5 +1,15 @@
 import { z } from "zod";
 
+// ─── LogEntry 数据模型 ─────────────────────────────────────────────────────────
+
+/** Agent 事件日志条目 */
+export const LogEntrySchema = z.object({
+  event: z.string(),
+  text: z.string(),
+  timestamp: z.string(),
+});
+export type LogEntry = z.infer<typeof LogEntrySchema>;
+
 // ─── PlanGenerationV2 数据模型 ─────────────────────────────────────────────────
 
 export const PlanGenV2StatusSchema = z.enum([
@@ -83,6 +93,7 @@ export const PlanGenerationV2Schema = z.object({
   result: PlanGenV2ResultSchema.nullable().default(null),
   error: z.string().nullable().default(null),
   adoptedPlanId: z.string().uuid().nullable().default(null), // 新增：采纳后关联
+  logs: z.array(LogEntrySchema).default([]), // Agent 事件日志
   startedAt: z.string().datetime(),
   completedAt: z.string().datetime().nullable().default(null),
 });

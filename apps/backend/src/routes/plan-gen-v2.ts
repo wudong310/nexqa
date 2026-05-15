@@ -246,6 +246,7 @@ export const planGenV2PollRoutes = new Hono()
           status: displayStatus,
           progress:
             gen.status === "pending" ? "等待启动..." : "正在分析 API 变更...",
+          logs: gen.logs || [],
         });
       case "completed":
         return c.json({
@@ -253,12 +254,14 @@ export const planGenV2PollRoutes = new Hono()
           status: displayStatus,
           result: gen.result,
           adoptedPlanId: gen.adoptedPlanId,
+          logs: gen.logs || [],
         });
       case "failed":
         return c.json({
           id: gen.id,
           status: displayStatus,
           error: gen.error,
+          logs: gen.logs || [],
         });
     }
   })
