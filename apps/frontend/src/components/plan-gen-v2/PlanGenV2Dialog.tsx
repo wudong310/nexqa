@@ -8,6 +8,7 @@
  * - 轮询 GET API 直到完成/失败
  * - 展示结果：方案名称/描述/reasoning + 采纳按钮
  * - 失败展示错误信息
+ * - generating 阶段关闭不重置状态
  */
 
 import { api } from "@/lib/api";
@@ -149,14 +150,24 @@ export function PlanGenV2Dialog({
   }, [intent, scope, openclawConnectionId, startMutation]);
 
   const handleAdopt = useCallback(() => {
-    if (!result) return;
-    // TODO: 对接后端采纳 API（复用 V1 adopt 或新建）
-    // 暂时 invalidate plan 列表并关闭
-    queryClient.invalidateQueries({ queryKey: ["test-plans", projectId] });
-    toast.success(`方案「${result.plan.name}」已生成，请在列表中查看`);
-    handleReset();
-    onOpenChange(false);
-  }, [result, queryClient, projectId, onOpenChange]);
+    if (!result || !generationId) return;
+    // 调用 adopt API
+    api
+      .post<{ planId: string; plan: { name: string } }>(
+        `/plan-generations-v2/${generationId}/adopt`,
+        { name: result.plan.name, description: result.plan.description }
+      )
+      .then(() => {
+        queryClient.invalidateQueries({ queryKey: ["test-plans", projectId] });
+        queryClient.invalidateQueries({ queryKey: ["plan-gen-records", projectId] });
+        toast.success(`方案「${result.plan.name}」已采纳`);
+        handleReset();
+        onOpenChange(false);
+      })
+      .catch((err: Error) => {
+        toast.error(`采纳失败：${err.message}`);
+      });
+  }, [result, generationId, queryClient, projectId, onOpenChange]);
 
   const handleReset = useCallback(() => {
     setIntent("");
@@ -168,11 +179,16 @@ export function PlanGenV2Dialog({
   }, []);
 
   const handleClose = useCallback(
-    (open: boolean) => {
-      if (!open && phase !== "generating") {
+    (isOpen: boolean) => {
+      if (!isOpen && phase === "generating") {
+        // generating 阶段关闭不重置，保留 generationId 和 state
+        onOpenChange(false);
+      } else if (!isOpen) {
         handleReset();
+        onOpenChange(false);
+      } else {
+        onOpenChange(true);
       }
-      onOpenChange(open);
     },
     [phase, onOpenChange, handleReset],
   );

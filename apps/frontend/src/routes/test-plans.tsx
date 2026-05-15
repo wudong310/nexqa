@@ -1,3 +1,6 @@
+import { AdoptConfirmDialog } from "@/components/plan-gen-v2/AdoptConfirmDialog";
+import { FloatingProgressIndicator } from "@/components/plan-gen-v2/FloatingProgressIndicator";
+import { PlanGenRecordsSection } from "@/components/plan-gen-v2/PlanGenRecordsSection";
 import { PlanGenV2Dialog } from "@/components/plan-gen-v2/PlanGenV2Dialog";
 import { PlanCard } from "@/components/test-plans/plan-card";
 import { PlanDetailView } from "@/components/test-plans/plan-detail-view";
@@ -18,6 +21,7 @@ import {
   TooltipProvider,
 } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
+import { usePlanGenRecords } from "@/hooks/usePlanGenRecords";
 import {
   useCreateTestPlan,
   useDeleteTestPlan,
@@ -26,6 +30,7 @@ import {
   useUpdateTestPlan,
 } from "@/hooks/use-test-plans";
 import type { CreateTestPlan, TestPlan, Project } from "@nexqa/shared";
+import type { PlanGenRecord } from "@/types/plan-gen-v2";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ClipboardList, Loader2, Wand2 } from "lucide-react";
@@ -147,6 +152,8 @@ export function TestPlansPage() {
 
   // V2 plan gen state
   const [v2DialogOpen, setV2DialogOpen] = useState(false);
+  const [adoptDialogOpen, setAdoptDialogOpen] = useState(false);
+  const [adoptingRecord, setAdoptingRecord] = useState<PlanGenRecord | null>(null);
 
   // Queries & mutations
   const { data: project } = useQuery<Project>({
@@ -156,6 +163,7 @@ export function TestPlansPage() {
   const openclawConnectionId = project?.openclawConnections?.[0]?.id ?? null;
 
   const { data: plans = [], isLoading } = useTestPlans(projectId);
+  const { data: genRecords = [] } = usePlanGenRecords(projectId);
   const createMutation = useCreateTestPlan(projectId);
   const updateMutation = useUpdateTestPlan(projectId);
   const deleteMutation = useDeleteTestPlan(projectId);
@@ -165,6 +173,12 @@ export function TestPlansPage() {
   const viewingPlan = useMemo(
     () => (viewPlanId ? plans.find((p) => p.id === viewPlanId) ?? null : null),
     [viewPlanId, plans],
+  );
+
+  // Find generating record for floating indicator
+  const generatingRecord = useMemo(
+    () => genRecords.find((r) => r.status === "generating") ?? null,
+    [genRecords]
   );
 
   // Handlers
@@ -259,6 +273,12 @@ export function TestPlansPage() {
     });
   }
 
+  // Handle adopt from records section
+  function handleAdopt(record: PlanGenRecord) {
+    setAdoptingRecord(record);
+    setAdoptDialogOpen(true);
+  }
+
   // #8 P0: Loading state — Skeleton
   if (isLoading) {
     return (
@@ -306,6 +326,11 @@ export function TestPlansPage() {
             isExecuting={executeMutation.isPending}
           />
         </div>
+        {/* Floating indicator also visible in detail view */}
+        <FloatingProgressIndicator
+          record={generatingRecord}
+          onClick={() => setV2DialogOpen(true)}
+        />
       </TooltipProvider>
     );
   }
@@ -332,6 +357,13 @@ export function TestPlansPage() {
             ✨ AI 智能生成(V2)
           </Button>
         </div>
+
+        {/* AI Generation Records Section */}
+        <PlanGenRecordsSection
+          projectId={projectId}
+          onOpenV2Dialog={() => setV2DialogOpen(true)}
+          onAdopt={handleAdopt}
+        />
 
         {/* Plan list */}
         {plans.length === 0 ? (
@@ -434,6 +466,20 @@ export function TestPlansPage() {
           onOpenChange={setV2DialogOpen}
           projectId={projectId}
           openclawConnectionId={openclawConnectionId}
+        />
+
+        {/* Adopt Confirm Dialog */}
+        <AdoptConfirmDialog
+          open={adoptDialogOpen}
+          onOpenChange={setAdoptDialogOpen}
+          record={adoptingRecord}
+          projectId={projectId}
+        />
+
+        {/* Floating Progress Indicator */}
+        <FloatingProgressIndicator
+          record={generatingRecord}
+          onClick={() => setV2DialogOpen(true)}
         />
       </div>
     </TooltipProvider>
