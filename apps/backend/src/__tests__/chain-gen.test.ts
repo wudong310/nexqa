@@ -54,6 +54,8 @@ function makeCase(
       phase: ["full"],
       priority: "P0",
     },
+    generationSource: "manual",
+    isLocked: false,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };

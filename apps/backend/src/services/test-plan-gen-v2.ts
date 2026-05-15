@@ -104,6 +104,7 @@ export class TestPlanGenV2Service {
       openclawConnectionId: request.openclawConnectionId,
       result: null,
       error: null,
+      adoptedPlanId: null,
       logs: [],
       startedAt: now,
       completedAt: null,

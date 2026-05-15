@@ -571,6 +571,8 @@ function generateSecurityCases(
             phase: ["full"],
             priority: "P1",
           },
+          generationSource: "rule",
+          isLocked: false,
           createdAt: now,
           updatedAt: now,
           _secMeta: {

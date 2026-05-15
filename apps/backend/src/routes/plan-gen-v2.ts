@@ -100,16 +100,14 @@ export const planGenV2ProjectRoutes = new Hono()
     const allRecords = await storage.list<PlanGenerationV2>("plan-generations-v2");
     let filtered = allRecords.filter((r) => r.projectId === projectId);
 
-    // 3. 状态兼容映射：completed → completed_pending, pending → generating
-    const mappedRecords = filtered.map((r) => {
-      let displayStatus = r.status;
-      if (r.status === "completed") {
-        displayStatus = r.adoptedPlanId ? "completed_adopted" : "completed_pending";
-      } else if (r.status === "pending") {
-        displayStatus = "generating";
-      }
-      return { ...r, status: displayStatus };
-    });
+    // 3. 状态兼容映射：pending → generating
+    const mappedRecords = filtered.map((r) => ({
+      ...r,
+      status:
+        r.status === "pending"
+          ? ("generating" as const)
+          : (r.status as unknown as "generating" | "completed" | "failed"),
+    }));
 
     // 4. 可选状态筛选
     if (statusFilter) {
@@ -229,13 +227,8 @@ export const planGenV2PollRoutes = new Hono()
       return c.json({ error: "生成记录不存在" }, 404);
     }
 
-    // 状态兼容映射
-    let displayStatus = gen.status;
-    if (gen.status === "completed") {
-      displayStatus = gen.adoptedPlanId ? "completed_adopted" : "completed_pending";
-    } else if (gen.status === "pending") {
-      displayStatus = "generating";
-    }
+    // 状态兼容映射（GET 单条不暴露扩展状态，避免 TS 类型冲突）
+    const displayStatus = gen.status === "pending" ? "generating" : gen.status;
 
     // 根据状态返回不同结构
     switch (gen.status) {
@@ -356,10 +349,7 @@ export const planGenV2PollRoutes = new Hono()
     }
 
     // 2. 状态校验
-    if (
-      generation.status !== "completed" &&
-      generation.status !== "completed_pending"
-    ) {
+    if (generation.status !== "completed") {
       return c.json(
         { error: "生成未完成，无法采纳", code: "GENERATION_NOT_COMPLETED" },
         400,

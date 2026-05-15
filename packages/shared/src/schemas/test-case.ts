@@ -62,6 +62,8 @@ export const TestCaseSchema = z.object({
   expected: TestCaseExpectedSchema,
   tags: TestCaseTagsSchema.default({ purpose: ["functional"], strategy: ["positive"], phase: ["full"], priority: "P1" }),
   apiChangeFlag: ApiChangeFlagSchema.optional(),
+  generationSource: z.enum(["manual", "rule", "ai", "ai-enhanced"]).default("manual"),
+  isLocked: z.boolean().default(false),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });

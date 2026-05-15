@@ -25,7 +25,10 @@ import { ManualCaseDialog } from "@/components/api-test/manual-case-dialog";
 import { AddEndpointSheet } from "@/components/api-test/add-endpoint-sheet";
 import { ImportApiSheet } from "@/components/api-test/import-api-sheet";
 import { CaseGenSheet } from "@/components/ai/case-gen-sheet";
-import { Globe, Loader2, Sparkles, Upload } from "lucide-react";
+import { CaseGenConfigDialog } from "@/components/ai/case-gen-config-dialog";
+import { CaseGenRecordSheet } from "@/components/ai/case-gen-record-sheet";
+import { useStartCaseGen } from "@/hooks/use-case-gen-v2";
+import { Globe, Loader2, Sparkles, Upload, Wand2 } from "lucide-react";
 
 export function ApiTestPage() {
   const { projectId } = useParams({ from: "/p/$projectId/api" });
@@ -57,6 +60,9 @@ export function ApiTestPage() {
   }, []);
 
   const [showCaseGen, setShowCaseGen] = useState(false);
+  const [showCaseGenV2Config, setShowCaseGenV2Config] = useState(false);
+  const [showCaseGenV2Records, setShowCaseGenV2Records] = useState(false);
+  const startCaseGenMutation = useStartCaseGen(projectId);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [openModule, setOpenModule] = useState<string | null>(null);
 
@@ -240,6 +246,23 @@ export function ApiTestPage() {
                         ? "AI 生成筛选结果"
                         : "AI 生成用例"}
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowCaseGenV2Config(true)}
+                    disabled={endpoints.length === 0}
+                    className="gap-1.5"
+                  >
+                    <Wand2 className="h-3.5 w-3.5" />
+                    {checkedEpIds.size > 0 ? `批量生成 (${checkedEpIds.size})` : "批量生成"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setShowCaseGenV2Records(true)}
+                  >
+                    生成记录
+                  </Button>
                 </span>
               </TooltipTrigger>
               {endpoints.length === 0 && (
@@ -350,6 +373,24 @@ export function ApiTestPage() {
       onOpenChange={setShowCaseGen}
       projectId={projectId}
       endpoints={checkedEpIds.size > 0 ? endpoints.filter((ep) => checkedEpIds.has(ep.id)) : endpoints}
+    />
+    <CaseGenConfigDialog
+      open={showCaseGenV2Config}
+      onOpenChange={setShowCaseGenV2Config}
+      endpoints={checkedEpIds.size > 0 ? endpoints.filter((ep) => checkedEpIds.has(ep.id)) : endpoints}
+      onGenerate={(config) => {
+        const selectedEps = checkedEpIds.size > 0 ? endpoints.filter((ep) => checkedEpIds.has(ep.id)) : endpoints;
+        startCaseGenMutation.mutate(
+          { endpointIds: selectedEps.map((e) => e.id), ...config },
+          { onSuccess: () => { setShowCaseGenV2Config(false); setShowCaseGenV2Records(true); } }
+        );
+      }}
+      isGenerating={startCaseGenMutation.isPending}
+    />
+    <CaseGenRecordSheet
+      open={showCaseGenV2Records}
+      onOpenChange={setShowCaseGenV2Records}
+      projectId={projectId}
     />
     </TooltipProvider>
   );

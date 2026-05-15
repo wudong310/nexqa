@@ -89,6 +89,8 @@ export const testCaseRoutes = new Hono()
         bodySchema: null,
       },
       tags: normaliseTags(body.tags),
+      generationSource: body.generationSource || "manual",
+      isLocked: body.isLocked ?? false,
       createdAt: now,
       updatedAt: now,
     };

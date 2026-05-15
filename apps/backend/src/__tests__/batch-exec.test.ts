@@ -31,6 +31,8 @@ function makeTestCase(overrides: Partial<TestCase> = {}): TestCase {
       phase: ["full"],
       priority: "P1",
     },
+    generationSource: "manual",
+    isLocked: false,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     ...overrides,

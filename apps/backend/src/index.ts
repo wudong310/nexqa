@@ -33,6 +33,7 @@ import { webhookRoutes } from "./routes/webhooks.js";
 import { gitSourceRoutes } from "./routes/git-sources.js";
 import { scanRoutes } from "./routes/scan.js";
 import { planGenV2ProjectRoutes, planGenV2PollRoutes } from "./routes/plan-gen-v2.js";
+import { caseGenV2ProjectRoutes, caseGenV2TaskRoutes } from "./routes/case-gen-v2.js";
 
 type Env = { Variables: { traceId: string; broadcaster?: { broadcast: (event: unknown) => void } } };
 
@@ -95,6 +96,8 @@ app.route("/nexqa/api/git-sources", gitSourceRoutes);
 app.route("/nexqa/api", scanRoutes);
 app.route("/nexqa/api/projects", planGenV2ProjectRoutes);
 app.route("/nexqa/api", planGenV2PollRoutes);
+app.route("/nexqa/api/projects", caseGenV2ProjectRoutes);
+app.route("/nexqa/api", caseGenV2TaskRoutes);
 
 // ── Global error handler ──────────────────────────────
 app.onError((err, c) => {
