@@ -44,7 +44,7 @@ import { toast } from "sonner";
 
 // ── Types ───────────────────────────────────────────
 
-type ScopeChoice = "all" | "changed";
+export type ScopeChoice = "all" | "changed";
 
 interface PlanGenV2DialogProps {
   open: boolean;
@@ -52,6 +52,10 @@ interface PlanGenV2DialogProps {
   projectId: string;
   /** 第一个 OpenClaw 连接 ID（从项目配置自动获取） */
   openclawConnectionId: string | null;
+  /** 重试时预填充的 intent */
+  initialIntent?: string;
+  /** 重试时预填充的 scope */
+  initialScope?: ScopeChoice;
 }
 
 // ── Component ───────────────────────────────────────
@@ -61,6 +65,8 @@ export function PlanGenV2Dialog({
   onOpenChange,
   projectId,
   openclawConnectionId,
+  initialIntent,
+  initialScope,
 }: PlanGenV2DialogProps) {
   const queryClient = useQueryClient();
 
@@ -85,6 +91,14 @@ export function PlanGenV2Dialog({
       logsEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [logs]);
+
+  // Initialize from retry params when dialog opens
+  useEffect(() => {
+    if (open && initialIntent) {
+      setIntent(initialIntent);
+      setScope(initialScope || "all");
+    }
+  }, [open, initialIntent, initialScope]);
 
   // ── Start generation mutation ──────────────────────
 

@@ -1,7 +1,7 @@
 import { AdoptConfirmDialog } from "@/components/plan-gen-v2/AdoptConfirmDialog";
 import { FloatingProgressIndicator } from "@/components/plan-gen-v2/FloatingProgressIndicator";
 import { PlanGenRecordsSection } from "@/components/plan-gen-v2/PlanGenRecordsSection";
-import { PlanGenV2Dialog } from "@/components/plan-gen-v2/PlanGenV2Dialog";
+import { PlanGenV2Dialog, type ScopeChoice } from "@/components/plan-gen-v2/PlanGenV2Dialog";
 import { PlanCard } from "@/components/test-plans/plan-card";
 import { PlanDetailView } from "@/components/test-plans/plan-detail-view";
 import { PlanFormDialog } from "@/components/test-plans/plan-form-dialog";
@@ -154,6 +154,8 @@ export function TestPlansPage() {
   const [v2DialogOpen, setV2DialogOpen] = useState(false);
   const [adoptDialogOpen, setAdoptDialogOpen] = useState(false);
   const [adoptingRecord, setAdoptingRecord] = useState<PlanGenRecord | null>(null);
+  const [retryIntent, setRetryIntent] = useState<string | undefined>(undefined);
+  const [retryScope, setRetryScope] = useState<ScopeChoice | undefined>(undefined);
 
   // Queries & mutations
   const { data: project } = useQuery<Project>({
@@ -279,6 +281,22 @@ export function TestPlansPage() {
     setAdoptDialogOpen(true);
   }
 
+  // Handle retry from records section
+  function handleRetry(record: PlanGenRecord) {
+    setRetryIntent(record.intent);
+    setRetryScope(record.scope?.changedOnly ? "changed" : "all");
+    setV2DialogOpen(true);
+  }
+
+  // Clear retry state when dialog closes
+  function handleV2DialogOpenChange(open: boolean) {
+    setV2DialogOpen(open);
+    if (!open) {
+      setRetryIntent(undefined);
+      setRetryScope(undefined);
+    }
+  }
+
   // #8 P0: Loading state — Skeleton
   if (isLoading) {
     return (
@@ -363,6 +381,7 @@ export function TestPlansPage() {
           projectId={projectId}
           onOpenV2Dialog={() => setV2DialogOpen(true)}
           onAdopt={handleAdopt}
+          onRetry={handleRetry}
         />
 
         {/* Plan list */}
@@ -463,9 +482,11 @@ export function TestPlansPage() {
         {/* V2 Plan Gen Dialog */}
         <PlanGenV2Dialog
           open={v2DialogOpen}
-          onOpenChange={setV2DialogOpen}
+          onOpenChange={handleV2DialogOpenChange}
           projectId={projectId}
           openclawConnectionId={openclawConnectionId}
+          initialIntent={retryIntent}
+          initialScope={retryScope}
         />
 
         {/* Adopt Confirm Dialog */}

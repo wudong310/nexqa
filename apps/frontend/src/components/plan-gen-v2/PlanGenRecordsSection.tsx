@@ -38,6 +38,7 @@ interface PlanGenRecordsSectionProps {
   projectId: string;
   onOpenV2Dialog: () => void;
   onAdopt: (record: PlanGenRecord) => void;
+  onRetry: (record: PlanGenRecord) => void;
 }
 
 // ── Helpers ─────────────────────────────────────────
@@ -246,6 +247,7 @@ export function PlanGenRecordsSection({
   projectId,
   onOpenV2Dialog,
   onAdopt,
+  onRetry,
 }: PlanGenRecordsSectionProps) {
   const [expanded, setExpanded] = useState(false);
 
@@ -301,10 +303,9 @@ export function PlanGenRecordsSection({
   // Handle retry
   const handleRetry = useCallback(
     (record: PlanGenRecord) => {
-      // TODO: 实现重试逻辑（需要传递 intent 和 scope 到 Dialog）
-      toast.info("重试功能开发中");
+      onRetry(record);
     },
-    []
+    [onRetry]
   );
 
   // Handle view adopted plan
