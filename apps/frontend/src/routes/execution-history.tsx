@@ -125,6 +125,63 @@ function failTypeColor(ft: FailType): string {
   }
 }
 
+// 从 request 提取关键信息
+function extractRequestInfo(req: TestResult["request"]) {
+  const urlObj = (() => {
+    try {
+      return new URL(req.url);
+    } catch {
+      return null;
+    }
+  })();
+  const path = urlObj?.pathname ?? req.url;
+  // body 中前 3 个非嵌套字段（值为 string/number/boolean 的）
+  const bodyKeys: { key: string; value: string }[] = [];
+  if (req.body && typeof req.body === "object" && !Array.isArray(req.body)) {
+    for (const [k, v] of Object.entries(req.body as Record<string, unknown>)) {
+      if (bodyKeys.length >= 3) break;
+      if (
+        typeof v === "string" ||
+        typeof v === "number" ||
+        typeof v === "boolean"
+      ) {
+        bodyKeys.push({ key: k, value: String(v) });
+      }
+    }
+  }
+  return { method: req.method, path, bodyKeys };
+}
+
+// 从 response 提取关键信息
+function extractResponseInfo(res: TestResult["response"]) {
+  const bodyKeys: { key: string; value: string }[] = [];
+  if (res.body && typeof res.body === "object" && !Array.isArray(res.body)) {
+    for (const [k, v] of Object.entries(res.body as Record<string, unknown>)) {
+      if (bodyKeys.length >= 2) break;
+      if (
+        typeof v === "string" ||
+        typeof v === "number" ||
+        typeof v === "boolean"
+      ) {
+        bodyKeys.push({ key: k, value: String(v) });
+      }
+    }
+  }
+  return {
+    status: res.status,
+    statusText: res.statusText,
+    duration: res.duration,
+    bodyKeys,
+  };
+}
+
+// 状态码颜色
+function statusCodeColor(status: number): string {
+  if (status >= 200 && status < 300) return "text-green-600";
+  if (status >= 400 && status < 500) return "text-orange-500";
+  return "text-red-600"; // 5xx and others
+}
+
 // ── Progress Bar Component ──────────────────────────
 
 function PassRateBar({
@@ -204,6 +261,7 @@ function BatchRunDetail({
 }) {
   const navigate = useNavigate();
   const [expandedResults, setExpandedResults] = useState<Set<string>>(new Set());
+  const [expandedSteps, setExpandedSteps] = useState<Set<string>>(new Set());
   const [analysisSheetOpen, setAnalysisSheetOpen] = useState(false);
 
   // AI Analysis
@@ -279,6 +337,15 @@ function BatchRunDetail({
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleStep(key: string) {
+    setExpandedSteps((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   }
@@ -364,6 +431,12 @@ function BatchRunDetail({
         {testResults.map((result) => {
           const tc = caseMap.get(result.caseId);
           const isExpanded = expandedResults.has(result.id);
+          const reqInfo = extractRequestInfo(result.request);
+          const resInfo = extractResponseInfo(result.response);
+          const reqStepKey = `${result.id}-request`;
+          const resStepKey = `${result.id}-response`;
+          const reqStepExpanded = expandedSteps.has(reqStepKey);
+          const resStepExpanded = expandedSteps.has(resStepKey);
           return (
             <div key={result.id} className="border rounded-lg overflow-hidden">
               <div
@@ -383,27 +456,6 @@ function BatchRunDetail({
                 <span className="text-sm font-medium truncate flex-1">
                   {tc?.name || result.caseId}
                 </span>
-                {result.failType && (
-                  <Badge
-                    variant="outline"
-                    className={`text-[10px] h-5 ${failTypeColor(result.failType)}`}
-                  >
-                    {failTypeLabel(result.failType)}
-                  </Badge>
-                )}
-                <Badge
-                  variant="outline"
-                  className={
-                    result.response.status < 400
-                      ? "text-green-600 border-green-200 text-xs"
-                      : "text-red-600 border-red-200 text-xs"
-                  }
-                >
-                  {result.response.status}
-                </Badge>
-                <span className="text-xs text-muted-foreground shrink-0">
-                  {result.response.duration}ms
-                </span>
               </div>
               {isExpanded && (
                 <div className="px-3 pb-3 space-y-3 border-t bg-muted/20">
@@ -413,28 +465,146 @@ function BatchRunDetail({
                       <TagBadges tags={safeTags(tc.tags)} />
                     </div>
                   )}
-                  {result.failReason && (
-                    <div className="text-sm text-red-600 bg-red-50 dark:bg-red-950 rounded p-2">
-                      <AlertCircle className="h-3.5 w-3.5 inline mr-1" />
-                      {result.failReason}
+
+                  {/* ── 时序视图：请求 → 响应 → 断言 ── */}
+                  <div className="relative pl-8">
+                    {/* 左侧竖线 */}
+                    <div className="absolute left-3 top-1 bottom-1 w-px bg-border" />
+
+                    {/* 步骤 1：请求 */}
+                    <div className="relative pb-4">
+                      <div className="absolute -left-[1.375rem] top-0 flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900 text-sm">
+                        📤
+                      </div>
+                      <div
+                        className="flex items-center gap-2 cursor-pointer min-w-0"
+                        onClick={() => toggleStep(reqStepKey)}
+                      >
+                        {reqStepExpanded ? (
+                          <ChevronDown className="h-3 w-3 shrink-0" />
+                        ) : (
+                          <ChevronRight className="h-3 w-3 shrink-0" />
+                        )}
+                        <span className="font-mono text-xs font-bold shrink-0">
+                          {reqInfo.method}
+                        </span>
+                        <span className="text-xs text-muted-foreground truncate min-w-0">
+                          {reqInfo.path}
+                        </span>
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {reqInfo.bodyKeys.map((kv) => (
+                            <Badge
+                              key={kv.key}
+                              variant="secondary"
+                              className="text-[10px] h-5"
+                            >
+                              {kv.key}={kv.value}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                      {reqStepExpanded && (
+                        <pre className="text-xs bg-muted rounded p-3 overflow-auto max-h-48 mt-2">
+                          {JSON.stringify(result.request, null, 2)}
+                        </pre>
+                      )}
                     </div>
-                  )}
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground mb-1">
-                      请求
-                    </p>
-                    <pre className="text-xs bg-muted rounded p-3 overflow-auto max-h-48">
-                      {JSON.stringify(result.request, null, 2)}
-                    </pre>
+
+                    {/* 步骤 2：响应 */}
+                    <div className="relative pb-4">
+                      <div className="absolute -left-[1.375rem] top-0 flex items-center justify-center w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900 text-sm">
+                        📥
+                      </div>
+                      <div
+                        className="flex items-center gap-2 cursor-pointer min-w-0"
+                        onClick={() => toggleStep(resStepKey)}
+                      >
+                        {resStepExpanded ? (
+                          <ChevronDown className="h-3 w-3 shrink-0" />
+                        ) : (
+                          <ChevronRight className="h-3 w-3 shrink-0" />
+                        )}
+                        <span
+                          className={`font-mono text-xs font-bold shrink-0 ${statusCodeColor(resInfo.status)}`}
+                        >
+                          {resInfo.status}
+                        </span>
+                        {resInfo.statusText && (
+                          <span className="text-xs text-muted-foreground shrink-0">
+                            {resInfo.statusText}
+                          </span>
+                        )}
+                        <span className="text-xs text-muted-foreground shrink-0">
+                          {resInfo.duration}ms
+                        </span>
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {resInfo.bodyKeys.map((kv) => (
+                            <Badge
+                              key={kv.key}
+                              variant="secondary"
+                              className="text-[10px] h-5"
+                            >
+                              {kv.key}={kv.value}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                      {resStepExpanded && (
+                        <pre className="text-xs bg-muted rounded p-3 overflow-auto max-h-48 mt-2">
+                          {JSON.stringify(result.response, null, 2)}
+                        </pre>
+                      )}
+                    </div>
+
+                    {/* 步骤 3：断言（最后一步，图标自身遮盖左侧竖线尾部） */}
+                    <div className="relative">
+                      {/* 遮盖本步骤以下的竖线 */}
+                      <div className="absolute -left-5 top-3 bottom-0 w-px bg-muted/20" />
+                      {result.passed ? (
+                        <div
+                          className="absolute -left-[1.375rem] top-0 flex items-center justify-center w-6 h-6 rounded-full bg-green-100 dark:bg-green-900 text-sm"
+                          aria-label="断言通过"
+                        >
+                          ✅
+                        </div>
+                      ) : (
+                        <div
+                          className="absolute -left-[1.375rem] top-0 flex items-center justify-center w-6 h-6 rounded-full bg-red-100 dark:bg-red-900 text-sm"
+                          aria-label="断言失败"
+                        >
+                          ❌
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {result.passed ? (
+                          <span className="text-sm font-medium text-green-600">
+                            通过
+                          </span>
+                        ) : (
+                          <>
+                            <span className="text-sm font-medium text-red-600">
+                              失败
+                            </span>
+                            {result.failType && (
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] h-5 ${failTypeColor(result.failType)}`}
+                              >
+                                {failTypeLabel(result.failType)}
+                              </Badge>
+                            )}
+                          </>
+                        )}
+                      </div>
+                      {!result.passed && result.failReason && (
+                        <div className="text-sm text-red-600 bg-red-50 dark:bg-red-950 rounded p-2 mt-2">
+                          <AlertCircle className="h-3.5 w-3.5 inline mr-1" />
+                          {result.failReason}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground mb-1">
-                      响应
-                    </p>
-                    <pre className="text-xs bg-muted rounded p-3 overflow-auto max-h-48">
-                      {JSON.stringify(result.response, null, 2)}
-                    </pre>
-                  </div>
+
                   {tc?.endpointId && (
                     <Button
                       variant="outline"
